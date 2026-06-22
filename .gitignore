@@ -1,0 +1,36 @@
+.DS_Store
+.idea/
+.ipynb_checkpoints/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local data and generated outputs
+data/raw/
+data/processed/
+data/predictions/
+artifacts/
+mlruns/
+notebooks/catboost_info/
+*.log
+*.tmp
+
+# Environment files
+.env
+.env.*
+.venv/
+venv/
+env/
+
+# Jupyter
+.jupyter/
+
+# Model/data artifacts
+*.pkl
+*.joblib
+*.parquet
+*.csv
+*.feather
+*.h5
