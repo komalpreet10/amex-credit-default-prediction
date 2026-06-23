@@ -7,6 +7,7 @@ import lightgbm as lgb
 import pandas as pd
 
 from amex_default.config import MODEL_DIR
+from amex_default.features import build_customer_features, infer_continuous_features
 
 
 def load_feature_list(path: str | Path | None = None) -> list[str]:
@@ -83,6 +84,42 @@ def predict_default_probability(model, features: dict[str, float | str]) -> floa
     )
     prediction = model.predict(X)
     return float(prediction[0])
+
+
+def predict_default_probability_from_frame(model, features: pd.DataFrame) -> float:
+    feature_list = load_feature_list()
+    categorical_feature_list = load_categorical_feature_list()
+    feature_dict = features.iloc[0].to_dict()
+    X = align_features(
+        feature_dict,
+        feature_list,
+        model=model,
+        categorical_feature_list=categorical_feature_list,
+    )
+    prediction = model.predict(X)
+    return float(prediction[0])
+
+
+def predict_default_probability_from_statements(
+    model,
+    statements: list[dict[str, object]] | pd.DataFrame,
+) -> tuple[float, pd.DataFrame]:
+    feature_list = load_feature_list()
+    statement_frame = (
+        statements.copy()
+        if isinstance(statements, pd.DataFrame)
+        else pd.DataFrame(statements)
+    )
+    engineered_features = build_customer_features(
+        statement_frame,
+        continuous_features=infer_continuous_features(feature_list),
+    )
+    if len(engineered_features) != 1:
+        raise ValueError(
+            "Raw prediction expects statement rows for exactly one customer_ID."
+        )
+    probability = predict_default_probability_from_frame(model, engineered_features)
+    return probability, engineered_features
 
 
 def assign_risk_category(probability: float) -> str:

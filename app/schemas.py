@@ -1,19 +1,21 @@
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
 class PredictionRequest(BaseModel):
-    features: dict[str, float | str] = Field(
-        ..., description="Customer-level model features keyed by feature name."
+    statements: list[dict[str, Any]] = Field(
+        ...,
+        description=(
+            "Raw monthly AMEX statement rows. Each row must include customer_ID; "
+            "S_2 is recommended so recent-window and diff features are ordered correctly."
+        ),
     )
 
 
 class PredictionResponse(BaseModel):
     default_probability: float
     risk_category: str
-
-
-class ModelInfoResponse(BaseModel):
-    model_name: str
-    problem_type: str
-    output: str
-    n_features: int
+    customer_id: str | None = None
+    n_statements: int | None = None
+    n_engineered_features: int | None = None

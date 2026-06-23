@@ -34,3 +34,6 @@ env/
 *.csv
 *.feather
 *.h5
+
+# Local FastAPI demo payloads
+amex_predict_raw_payload*.json
