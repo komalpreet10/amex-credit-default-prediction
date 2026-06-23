@@ -18,12 +18,6 @@ End-to-end machine learning project for predicting customer credit default risk 
 
 The final serving model is LightGBM trained on all engineered training rows. Reported performance uses 5-fold out-of-fold cross-validation metrics.
 
-## Model Comparison
-
-![Model comparison ROC-AUC](docs/images/model_comparison_roc_auc.png)
-
-![Model comparison PR-AUC](docs/images/model_comparison_pr_auc.png)
-
 ## LightGBM Evaluation
 
 ![LightGBM ROC curve](docs/images/lightgbm_roc_curve.png)
@@ -164,7 +158,3 @@ Tracked artifacts include metrics reports, feature importance files, out-of-fold
 - SHAP
 - MLflow
 - FastAPI
-
-## Portfolio Summary
-
-This project demonstrates a production-oriented credit risk workflow: transforming raw time-series customer statements into model-ready features, comparing gradient-boosted models with cross-validation, explaining model behavior with SHAP, tracking experiments with MLflow, and serving predictions through a clean FastAPI interface.
