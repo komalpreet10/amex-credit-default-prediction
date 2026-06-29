@@ -7,6 +7,7 @@ matplotlib
 seaborn
 lightgbm
 xgboost
+optuna
 shap
 mlflow
 fastapi

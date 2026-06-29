@@ -33,6 +33,38 @@
           "output_dir": {
             "parameterType": "STRING"
           },
+          "params_uri": {
+            "parameterType": "STRING"
+          },
+          "project": {
+            "parameterType": "STRING"
+          },
+          "region": {
+            "parameterType": "STRING"
+          },
+          "table": {
+            "parameterType": "STRING"
+          },
+          "training_image": {
+            "parameterType": "STRING"
+          }
+        }
+      },
+      "outputDefinitions": {
+        "parameters": {
+          "Output": {
+            "parameterType": "STRING"
+          }
+        }
+      }
+    },
+    "comp-run-vertex-tuning-job": {
+      "executorLabel": "exec-run-vertex-tuning-job",
+      "inputDefinitions": {
+        "parameters": {
+          "output_dir": {
+            "parameterType": "STRING"
+          },
           "project": {
             "parameterType": "STRING"
           },
@@ -174,7 +206,27 @@
             "sh",
             "-ec",
             "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
-            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef run_vertex_training_job(\n    project: str,\n    region: str,\n    training_image: str,\n    table: str,\n    output_dir: str,\n) -> str:\n    from google.cloud import aiplatform\n\n    aiplatform.init(project=project, location=region, staging_bucket=output_dir)\n    job = aiplatform.CustomContainerTrainingJob(\n        display_name=\"amex-lightgbm-training\",\n        container_uri=training_image,\n        command=[\"python\", \"gcp/vertex/train.py\"],\n    )\n    model = job.run(\n        args=[\n            \"--project\",\n            project,\n            \"--table\",\n            table,\n            \"--output-dir\",\n            output_dir,\n            \"--shap-sample-size\",\n            \"3000\",\n            \"--shap-max-display\",\n            \"30\",\n        ],\n        replica_count=1,\n        machine_type=\"n1-standard-8\",\n        sync=True,\n    )\n    return model.resource_name if model else output_dir\n\n"
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef run_vertex_training_job(\n    project: str,\n    region: str,\n    training_image: str,\n    table: str,\n    output_dir: str,\n    params_uri: str,\n) -> str:\n    from google.cloud import aiplatform\n\n    aiplatform.init(project=project, location=region, staging_bucket=output_dir)\n    job = aiplatform.CustomContainerTrainingJob(\n        display_name=\"amex-lightgbm-training\",\n        container_uri=training_image,\n        command=[\"python\", \"gcp/vertex/train.py\"],\n    )\n    model = job.run(\n        args=[\n            \"--project\",\n            project,\n            \"--table\",\n            table,\n            \"--output-dir\",\n            output_dir,\n            \"--params-uri\",\n            params_uri,\n            \"--shap-sample-size\",\n            \"3000\",\n            \"--shap-max-display\",\n            \"30\",\n        ],\n        replica_count=1,\n        machine_type=\"n1-standard-8\",\n        sync=True,\n    )\n    return model.resource_name if model else output_dir\n\n"
+          ],
+          "image": "python:3.11"
+        }
+      },
+      "exec-run-vertex-tuning-job": {
+        "container": {
+          "args": [
+            "--executor_input",
+            "{{$}}",
+            "--function_to_execute",
+            "run_vertex_tuning_job"
+          ],
+          "command": [
+            "sh",
+            "-c",
+            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'google-cloud-aiplatform'  &&  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.16.1' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"$0\" \"$@\"\n",
+            "sh",
+            "-ec",
+            "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef run_vertex_tuning_job(\n    project: str,\n    region: str,\n    training_image: str,\n    table: str,\n    output_dir: str,\n) -> str:\n    from google.cloud import aiplatform\n\n    aiplatform.init(project=project, location=region, staging_bucket=output_dir)\n    job = aiplatform.CustomContainerTrainingJob(\n        display_name=\"amex-lightgbm-optuna-tuning\",\n        container_uri=training_image,\n        command=[\"python\", \"gcp/vertex/tune_lightgbm_optuna.py\"],\n    )\n    job.run(\n        args=[\n            \"--project\",\n            project,\n            \"--table\",\n            table,\n            \"--output-dir\",\n            output_dir,\n            \"--n-trials\",\n            \"25\",\n            \"--n-splits\",\n            \"3\",\n            \"--max-rows\",\n            \"100000\",\n        ],\n        replica_count=1,\n        machine_type=\"n1-standard-8\",\n        sync=True,\n    )\n    return f\"{output_dir.rstrip('/')}/lightgbm_optuna_best_params.json\"\n\n"
           ],
           "image": "python:3.11"
         }
@@ -270,12 +322,17 @@
             "name": "comp-run-vertex-training-job"
           },
           "dependentTasks": [
-            "load-features-to-bigquery"
+            "run-vertex-tuning-job"
           ],
           "inputs": {
             "parameters": {
               "output_dir": {
                 "componentInputParameter": "model_artifacts"
+              },
+              "params_uri": {
+                "runtimeValue": {
+                  "constant": "gs://amex-credit-risk-ml-data/models/lightgbm/tuning/lightgbm_optuna_best_params.json"
+                }
               },
               "project": {
                 "componentInputParameter": "project"
@@ -293,6 +350,41 @@
           },
           "taskInfo": {
             "name": "run-vertex-training-job"
+          }
+        },
+        "run-vertex-tuning-job": {
+          "cachingOptions": {
+            "enableCache": true
+          },
+          "componentRef": {
+            "name": "comp-run-vertex-tuning-job"
+          },
+          "dependentTasks": [
+            "load-features-to-bigquery"
+          ],
+          "inputs": {
+            "parameters": {
+              "output_dir": {
+                "runtimeValue": {
+                  "constant": "gs://amex-credit-risk-ml-data/models/lightgbm/tuning/"
+                }
+              },
+              "project": {
+                "componentInputParameter": "project"
+              },
+              "region": {
+                "componentInputParameter": "region"
+              },
+              "table": {
+                "componentInputParameter": "feature_table"
+              },
+              "training_image": {
+                "componentInputParameter": "training_image"
+              }
+            }
+          },
+          "taskInfo": {
+            "name": "run-vertex-tuning-job"
           }
         },
         "submit-dataproc-pyspark-batch": {

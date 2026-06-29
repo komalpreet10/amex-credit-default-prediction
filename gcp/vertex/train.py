@@ -70,6 +70,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--bq-location", default=BQ_LOCATION)
     parser.add_argument("--table", default=TABLE)
     parser.add_argument("--output-dir", default=OUTPUT_DIR)
+    parser.add_argument("--params-uri", default=None)
     parser.add_argument("--experiment", default=EXPERIMENT)
     parser.add_argument("--run-name", default=None)
     parser.add_argument("--n-splits", type=int, default=5)
@@ -82,6 +83,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--disable-shap", action="store_true")
     parser.add_argument("--disable-experiment", action="store_true")
     return parser.parse_args()
+
+
+def load_tuned_params(params_uri: str | None) -> dict[str, object]:
+    if not params_uri:
+        return {}
+    if not params_uri.startswith("gs://"):
+        raise ValueError("--params-uri must be a GCS URI.")
+
+    bucket_name, blob_name = params_uri.removeprefix("gs://").split("/", 1)
+    payload = (
+        storage.Client()
+        .bucket(bucket_name)
+        .blob(blob_name)
+        .download_as_text(encoding="utf-8")
+    )
+    data = json.loads(payload)
+    params = data.get("best_params", data)
+    LOGGER.info("Loaded tuned LightGBM params from %s", params_uri)
+    return params
 
 
 def read_training_data(args: argparse.Namespace) -> pd.DataFrame:
@@ -132,7 +152,9 @@ def train_cross_validated_model(
     X: pd.DataFrame,
     y: pd.Series,
     args: argparse.Namespace,
+    tuned_params: dict[str, object] | None = None,
 ) -> tuple[list[lgb.Booster], np.ndarray, list[dict[str, float]], pd.DataFrame]:
+    model_params = {**DEFAULT_PARAMS, **(tuned_params or {})}
     cv = StratifiedKFold(
         n_splits=args.n_splits,
         shuffle=True,
@@ -164,7 +186,7 @@ def train_cross_validated_model(
         )
 
         model = lgb.train(
-            DEFAULT_PARAMS,
+            model_params,
             train_data,
             num_boost_round=args.num_boost_round,
             valid_sets=[valid_data],
@@ -219,7 +241,9 @@ def train_final_model(
     X: pd.DataFrame,
     y: pd.Series,
     args: argparse.Namespace,
+    tuned_params: dict[str, object] | None = None,
 ) -> lgb.Booster:
+    model_params = {**DEFAULT_PARAMS, **(tuned_params or {})}
     categorical_features = X.select_dtypes(include=["category"]).columns.tolist()
     train_data = lgb.Dataset(
         X,
@@ -228,7 +252,7 @@ def train_final_model(
         free_raw_data=False,
     )
     return lgb.train(
-        DEFAULT_PARAMS,
+        model_params,
         train_data,
         num_boost_round=args.final_num_boost_round,
     )
@@ -361,14 +385,15 @@ def main() -> None:
     start = time.perf_counter()
     df = read_training_data(args)
     customer_ids, X, y = split_features_target(df)
+    tuned_params = load_tuned_params(args.params_uri)
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         output_dir = Path(tmp_dir)
 
         models, oof_predictions, fold_metrics, feature_importance = (
-            train_cross_validated_model(X, y, args)
+            train_cross_validated_model(X, y, args, tuned_params=tuned_params)
         )
-        final_model = train_final_model(X, y, args)
+        final_model = train_final_model(X, y, args, tuned_params=tuned_params)
 
         metrics = {
             "model": "lightgbm",
@@ -378,6 +403,7 @@ def main() -> None:
             "training_time_seconds": time.perf_counter() - start,
             **calculate_metrics(y, oof_predictions),
             "fold_metrics": fold_metrics,
+            "tuned_params": tuned_params,
         }
 
         final_model.save_model(str(output_dir / "model.txt"))
