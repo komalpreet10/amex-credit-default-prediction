@@ -70,6 +70,18 @@ amex-credit-default/
 6. Generate feature importance and SHAP explainability plots.
 7. Serve the final LightGBM model through FastAPI.
 
+## GCP LightGBM Tuning
+
+The Vertex AI pipeline runs Optuna tuning as a cloud step after loading features
+to BigQuery and before final LightGBM training. The tuning job reads
+`amex-credit-risk-ml.amex_ml.train_features` and writes its best parameters to:
+
+```text
+gs://amex-credit-risk-ml-data/models/lightgbm/tuning/lightgbm_optuna_best_params.json
+```
+
+Final Vertex training loads that GCS file through `--params-uri`.
+
 ## FastAPI Serving
 
 Start the API from the project root:
