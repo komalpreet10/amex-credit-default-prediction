@@ -38,6 +38,7 @@ def submit_dataproc_pyspark_batch(
     main_python_file_uri: str,
     py_file_uris: list[str],
     args: list[str],
+    timeout_seconds: int = 7200,
 ) -> str:
     import uuid
 
@@ -60,7 +61,7 @@ def submit_dataproc_pyspark_batch(
     operation = client.create_batch(
         request={"parent": parent, "batch": batch, "batch_id": actual_batch_id}
     )
-    response = operation.result()
+    response = operation.result(timeout=timeout_seconds)
     if response.state.name != "SUCCEEDED":
         raise RuntimeError(
             f"Dataproc batch {actual_batch_id} ended as {response.state.name}: "
