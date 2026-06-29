@@ -15,6 +15,15 @@ TRAINING_IMAGE = os.getenv("TRAINING_IMAGE_URI", "")
 PREPROCESS_SCRIPT = f"gs://{BUCKET}/code/gcp/spark/preprocess.py"
 FEATURE_SCRIPT = f"gs://{BUCKET}/code/gcp/spark/build_features.py"
 PY_FILES = [f"gs://{BUCKET}/code/gcp/spark/amex_default.zip"]
+DATAPROC_RUNTIME_PROPERTIES = {
+    "spark.executor.instances": "2",
+    "spark.driver.cores": "2",
+    "spark.executor.cores": "2",
+    "spark.driver.memory": "8g",
+    "spark.executor.memory": "8g",
+    "spark.dataproc.driver.disk.size": "250g",
+    "spark.dataproc.executor.disk.size": "250g",
+}
 
 RAW_DATA = f"gs://{BUCKET}/raw/train_data.csv"
 RAW_LABELS = f"gs://{BUCKET}/raw/train_labels.csv"
@@ -38,12 +47,13 @@ def submit_dataproc_pyspark_batch(
     main_python_file_uri: str,
     py_file_uris: list[str],
     args: list[str],
+    runtime_properties: dict[str, str],
     timeout_seconds: int = 7200,
 ) -> str:
     import uuid
 
     from google.cloud.dataproc_v1 import BatchControllerClient
-    from google.cloud.dataproc_v1.types import Batch, PySparkBatch
+    from google.cloud.dataproc_v1.types import Batch, PySparkBatch, RuntimeConfig
 
     client = BatchControllerClient(
         client_options={"api_endpoint": f"{region}-dataproc.googleapis.com:443"}
@@ -54,7 +64,8 @@ def submit_dataproc_pyspark_batch(
             main_python_file_uri=main_python_file_uri,
             python_file_uris=py_file_uris,
             args=args,
-        )
+        ),
+        runtime_config=RuntimeConfig(properties=runtime_properties),
     )
 
     actual_batch_id = f"{batch_id}-{uuid.uuid4().hex[:8]}"
@@ -295,6 +306,7 @@ def amex_pipeline(
         batch_id="amex-preprocess",
         main_python_file_uri=PREPROCESS_SCRIPT,
         py_file_uris=PY_FILES,
+        runtime_properties=DATAPROC_RUNTIME_PROPERTIES,
         args=[
             "--input",
             raw_data,
@@ -310,6 +322,7 @@ def amex_pipeline(
         batch_id="amex-build-features",
         main_python_file_uri=FEATURE_SCRIPT,
         py_file_uris=PY_FILES,
+        runtime_properties=DATAPROC_RUNTIME_PROPERTIES,
         args=[
             "--input",
             preprocessed_output,

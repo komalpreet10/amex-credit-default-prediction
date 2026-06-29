@@ -77,6 +77,9 @@
           "region": {
             "parameterType": "STRING"
           },
+          "runtime_properties": {
+            "parameterType": "STRUCT"
+          },
           "timeout_seconds": {
             "defaultValue": 7200.0,
             "isOptional": true,
@@ -113,6 +116,9 @@
           },
           "region": {
             "parameterType": "STRING"
+          },
+          "runtime_properties": {
+            "parameterType": "STRUCT"
           },
           "timeout_seconds": {
             "defaultValue": 7200.0,
@@ -188,7 +194,7 @@
             "sh",
             "-ec",
             "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
-            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef submit_dataproc_pyspark_batch(\n    project: str,\n    region: str,\n    batch_id: str,\n    main_python_file_uri: str,\n    py_file_uris: list[str],\n    args: list[str],\n    timeout_seconds: int = 7200,\n) -> str:\n    import uuid\n\n    from google.cloud.dataproc_v1 import BatchControllerClient\n    from google.cloud.dataproc_v1.types import Batch, PySparkBatch\n\n    client = BatchControllerClient(\n        client_options={\"api_endpoint\": f\"{region}-dataproc.googleapis.com:443\"}\n    )\n    parent = f\"projects/{project}/locations/{region}\"\n    batch = Batch(\n        pyspark_batch=PySparkBatch(\n            main_python_file_uri=main_python_file_uri,\n            python_file_uris=py_file_uris,\n            args=args,\n        )\n    )\n\n    actual_batch_id = f\"{batch_id}-{uuid.uuid4().hex[:8]}\"\n    operation = client.create_batch(\n        request={\"parent\": parent, \"batch\": batch, \"batch_id\": actual_batch_id}\n    )\n    response = operation.result(timeout=timeout_seconds)\n    if response.state.name != \"SUCCEEDED\":\n        raise RuntimeError(\n            f\"Dataproc batch {actual_batch_id} ended as {response.state.name}: \"\n            f\"{response.state_message}\"\n        )\n    return response.name\n\n"
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef submit_dataproc_pyspark_batch(\n    project: str,\n    region: str,\n    batch_id: str,\n    main_python_file_uri: str,\n    py_file_uris: list[str],\n    args: list[str],\n    runtime_properties: dict[str, str],\n    timeout_seconds: int = 7200,\n) -> str:\n    import uuid\n\n    from google.cloud.dataproc_v1 import BatchControllerClient\n    from google.cloud.dataproc_v1.types import Batch, PySparkBatch, RuntimeConfig\n\n    client = BatchControllerClient(\n        client_options={\"api_endpoint\": f\"{region}-dataproc.googleapis.com:443\"}\n    )\n    parent = f\"projects/{project}/locations/{region}\"\n    batch = Batch(\n        pyspark_batch=PySparkBatch(\n            main_python_file_uri=main_python_file_uri,\n            python_file_uris=py_file_uris,\n            args=args,\n        ),\n        runtime_config=RuntimeConfig(properties=runtime_properties),\n    )\n\n    actual_batch_id = f\"{batch_id}-{uuid.uuid4().hex[:8]}\"\n    operation = client.create_batch(\n        request={\"parent\": parent, \"batch\": batch, \"batch_id\": actual_batch_id}\n    )\n    response = operation.result(timeout=timeout_seconds)\n    if response.state.name != \"SUCCEEDED\":\n        raise RuntimeError(\n            f\"Dataproc batch {actual_batch_id} ended as {response.state.name}: \"\n            f\"{response.state_message}\"\n        )\n    return response.name\n\n"
           ],
           "image": "python:3.11"
         }
@@ -208,7 +214,7 @@
             "sh",
             "-ec",
             "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
-            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef submit_dataproc_pyspark_batch(\n    project: str,\n    region: str,\n    batch_id: str,\n    main_python_file_uri: str,\n    py_file_uris: list[str],\n    args: list[str],\n    timeout_seconds: int = 7200,\n) -> str:\n    import uuid\n\n    from google.cloud.dataproc_v1 import BatchControllerClient\n    from google.cloud.dataproc_v1.types import Batch, PySparkBatch\n\n    client = BatchControllerClient(\n        client_options={\"api_endpoint\": f\"{region}-dataproc.googleapis.com:443\"}\n    )\n    parent = f\"projects/{project}/locations/{region}\"\n    batch = Batch(\n        pyspark_batch=PySparkBatch(\n            main_python_file_uri=main_python_file_uri,\n            python_file_uris=py_file_uris,\n            args=args,\n        )\n    )\n\n    actual_batch_id = f\"{batch_id}-{uuid.uuid4().hex[:8]}\"\n    operation = client.create_batch(\n        request={\"parent\": parent, \"batch\": batch, \"batch_id\": actual_batch_id}\n    )\n    response = operation.result(timeout=timeout_seconds)\n    if response.state.name != \"SUCCEEDED\":\n        raise RuntimeError(\n            f\"Dataproc batch {actual_batch_id} ended as {response.state.name}: \"\n            f\"{response.state_message}\"\n        )\n    return response.name\n\n"
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef submit_dataproc_pyspark_batch(\n    project: str,\n    region: str,\n    batch_id: str,\n    main_python_file_uri: str,\n    py_file_uris: list[str],\n    args: list[str],\n    runtime_properties: dict[str, str],\n    timeout_seconds: int = 7200,\n) -> str:\n    import uuid\n\n    from google.cloud.dataproc_v1 import BatchControllerClient\n    from google.cloud.dataproc_v1.types import Batch, PySparkBatch, RuntimeConfig\n\n    client = BatchControllerClient(\n        client_options={\"api_endpoint\": f\"{region}-dataproc.googleapis.com:443\"}\n    )\n    parent = f\"projects/{project}/locations/{region}\"\n    batch = Batch(\n        pyspark_batch=PySparkBatch(\n            main_python_file_uri=main_python_file_uri,\n            python_file_uris=py_file_uris,\n            args=args,\n        ),\n        runtime_config=RuntimeConfig(properties=runtime_properties),\n    )\n\n    actual_batch_id = f\"{batch_id}-{uuid.uuid4().hex[:8]}\"\n    operation = client.create_batch(\n        request={\"parent\": parent, \"batch\": batch, \"batch_id\": actual_batch_id}\n    )\n    response = operation.result(timeout=timeout_seconds)\n    if response.state.name != \"SUCCEEDED\":\n        raise RuntimeError(\n            f\"Dataproc batch {actual_batch_id} ended as {response.state.name}: \"\n            f\"{response.state_message}\"\n        )\n    return response.name\n\n"
           ],
           "image": "python:3.11"
         }
@@ -337,6 +343,19 @@
               },
               "region": {
                 "componentInputParameter": "region"
+              },
+              "runtime_properties": {
+                "runtimeValue": {
+                  "constant": {
+                    "spark.dataproc.driver.disk.size": "250g",
+                    "spark.dataproc.executor.disk.size": "250g",
+                    "spark.driver.cores": "2",
+                    "spark.driver.memory": "8g",
+                    "spark.executor.cores": "2",
+                    "spark.executor.instances": "2",
+                    "spark.executor.memory": "8g"
+                  }
+                }
               }
             }
           },
@@ -400,6 +419,19 @@
               },
               "region": {
                 "componentInputParameter": "region"
+              },
+              "runtime_properties": {
+                "runtimeValue": {
+                  "constant": {
+                    "spark.dataproc.driver.disk.size": "250g",
+                    "spark.dataproc.executor.disk.size": "250g",
+                    "spark.driver.cores": "2",
+                    "spark.driver.memory": "8g",
+                    "spark.executor.cores": "2",
+                    "spark.executor.instances": "2",
+                    "spark.executor.memory": "8g"
+                  }
+                }
               }
             }
           },
