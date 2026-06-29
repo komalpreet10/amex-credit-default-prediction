@@ -26,7 +26,6 @@ from amex_default.evaluate import (
 )
 from amex_default.interpret import plot_feature_importance
 
-
 DEFAULT_PARAMS = {
     "objective": "binary:logistic",
     "eval_metric": "auc",
