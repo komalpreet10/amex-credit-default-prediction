@@ -1,13 +1,14 @@
 # American Express Credit Default Prediction
 
-End-to-end machine learning project for predicting customer credit default risk from monthly American Express statement data. The project covers exploratory analysis, customer-level feature engineering, LightGBM/XGBoost model training, model comparison, SHAP explainability, MLflow experiment tracking, and FastAPI model serving.
+End-to-end machine learning project for predicting customer credit default risk from monthly American Express statement data. The project covers exploratory analysis, PySpark customer-level feature engineering, BigQuery feature storage, Vertex AI Pipelines orchestration, Optuna-tuned LightGBM training, SHAP explainability, PSI drift analysis, and FastAPI model serving.
 
 ## Highlights
 
 - Built a binary classification pipeline for credit default prediction using the American Express Default Prediction dataset.
 - Engineered `3,418` customer-level features from raw monthly statement records using aggregation, lag, recent-window, first-value, and difference features.
 - Compared LightGBM and XGBoost with 5-fold cross-validation on `229,456` customer-level rows.
-- Deployed the final LightGBM model with FastAPI through a single `/predict` endpoint that accepts raw customer statement rows and runs feature engineering before prediction.
+- Implemented a GCP-native MLOps path using Dataproc Serverless, BigQuery, Vertex AI Pipelines, Vertex AI Custom Training, and GCS.
+- Served the final LightGBM model with FastAPI through a single `/predict` endpoint that accepts recent customer statement history, creates request-level features, aligns them to the trained schema, and returns default risk.
 
 ## Results
 
@@ -40,6 +41,13 @@ amex-credit-default/
 │   ├── main.py
 │   ├── model_loader.py
 │   └── schemas.py
+├── gcp/                         # GCP pipeline, Spark jobs, Vertex training, monitoring
+│   ├── pipeline.py
+│   ├── bigquery/
+│   ├── monitoring/
+│   ├── spark/
+│   └── vertex/
+├── docker/                      # Vertex training container
 ├── docs/images/                 # README plots
 ├── notebooks/                   # EDA, training, comparison, SHAP, MLflow, API demo
 ├── src/amex_default/            # Reusable ML pipeline code
@@ -54,33 +62,93 @@ amex-credit-default/
 ├── artifacts/                   # Local generated models, plots, reports
 ├── data/                        # Local raw, processed, and prediction data
 ├── mlruns/                      # Local MLflow experiment store
+├── amex_pipeline.json           # Compiled Vertex AI Pipeline spec
 ├── requirements.txt
 └── README.md
 ```
 
-`data/`, `artifacts/`, and `mlruns/` are local generated outputs and are ignored by Git.
+`data/`, `artifacts/`, and `mlruns/` are local generated outputs and are ignored by Git. The GCP pipeline uses GCS, BigQuery, and Vertex AI for cloud execution.
 
-## Pipeline
+## GCP Architecture
 
-1. Preprocess monthly customer statement rows.
-2. Build customer-level features from raw statement history.
-3. Train LightGBM and XGBoost with stratified 5-fold cross-validation.
-4. Save out-of-fold predictions, metrics, reports, plots, and model artifacts.
-5. Compare model performance and inference/training time.
-6. Generate feature importance and SHAP explainability plots.
-7. Serve the final LightGBM model through FastAPI.
+```text
+Raw AMEX CSVs in GCS
+        ↓
+Dataproc Serverless PySpark preprocessing and feature engineering
+        ↓
+Feature Parquet in GCS
+        ↓
+BigQuery table: amex-credit-risk-ml.amex_ml.train_features
+        ↓
+Vertex AI Pipeline
+        ↓
+Vertex AI Custom Training: Optuna LightGBM tuning
+        ↓
+GCS tuned params: gs://amex-credit-risk-ml-data/models/lightgbm/tuning/
+        ↓
+Vertex AI Custom Training: final LightGBM training and evaluation
+        ↓
+GCS model artifacts, metrics, plots, feature importance, SHAP outputs
+        ↓
+FastAPI / serving layer for online default-risk scoring
+```
+
+Current GCP project and storage:
+
+```text
+Project: amex-credit-risk-ml
+Region: us-central1
+Bucket: gs://amex-credit-risk-ml-data/
+Feature table: amex-credit-risk-ml.amex_ml.train_features
+Model artifacts: gs://amex-credit-risk-ml-data/models/lightgbm/
+```
+
+## Vertex AI Pipeline
+
+The current compiled pipeline starts from the existing BigQuery feature table because feature engineering has already been completed and loaded. In `gcp/pipeline.py`, the Dataproc preprocessing, Dataproc feature build, and BigQuery load steps are kept in the codebase for full reruns, but are commented out for the current run.
+
+Current runnable Vertex AI steps:
+
+1. `run-vertex-tuning-job`
+   - Runs `gcp/vertex/tune_lightgbm_optuna.py`.
+   - Reads `amex-credit-risk-ml.amex_ml.train_features`.
+   - Runs Optuna tuning for LightGBM.
+   - Writes best params and trial history to GCS.
+
+2. `run-vertex-training-job`
+   - Runs `gcp/vertex/train.py`.
+   - Loads tuned params from GCS through `--params-uri`.
+   - Trains and evaluates LightGBM.
+   - Saves model artifacts, metrics, plots, feature importance, and SHAP outputs to GCS.
+
+Compiled pipeline spec:
+
+```text
+amex_pipeline.json
+```
+
+To restore a full end-to-end rerun from raw data, uncomment the Dataproc and BigQuery task blocks in `gcp/pipeline.py`, recompile `amex_pipeline.json`, and rerun the pipeline.
 
 ## GCP LightGBM Tuning
 
-The Vertex AI pipeline runs Optuna tuning as a cloud step after loading features
-to BigQuery and before final LightGBM training. The tuning job reads
-`amex-credit-risk-ml.amex_ml.train_features` and writes its best parameters to:
+The Vertex AI pipeline runs Optuna tuning as a cloud step before final LightGBM training. The tuning job reads `amex-credit-risk-ml.amex_ml.train_features` and writes its best parameters to:
 
 ```text
 gs://amex-credit-risk-ml-data/models/lightgbm/tuning/lightgbm_optuna_best_params.json
 ```
 
 Final Vertex training loads that GCS file through `--params-uri`.
+
+## Drift Monitoring
+
+Population Stability Index monitoring is implemented in `gcp/monitoring/drift_psi.py`. It compares a baseline BigQuery feature table against a current BigQuery feature table, writes drift metrics to BigQuery, and stores a CSV drift report in GCS.
+
+Expected drift outputs:
+
+```text
+BigQuery metrics table: amex-credit-risk-ml.amex_ml.drift_metrics
+GCS report: gs://amex-credit-risk-ml-data/monitoring/train_window_drift_report.csv
+```
 
 ## FastAPI Serving
 
@@ -102,7 +170,7 @@ Prediction endpoint:
 POST /predict
 ```
 
-The endpoint accepts raw monthly statement rows for one `customer_ID`, runs feature engineering, aligns the generated features to the trained model, and returns a default probability.
+The endpoint accepts recent monthly statement rows for one `customer_ID`, runs lightweight request-level feature aggregation only for that customer, aligns the generated features to the trained model schema, and returns a default probability. It does not rerun the full Dataproc feature pipeline at inference time.
 
 Example request:
 
@@ -137,6 +205,8 @@ Example response:
 
 ## MLflow Tracking
 
+MLflow is used for local experiment tracking only. The GCP workflow uses Vertex AI jobs, GCS artifacts, BigQuery tables, and Cloud Logging for cloud execution and observability.
+
 Start the local MLflow UI:
 
 ```bash
@@ -163,10 +233,18 @@ Tracked artifacts include metrics reports, feature importance files, out-of-fold
 ## Tech Stack
 
 - Python
+- Google Cloud Platform
+- Dataproc Serverless
+- BigQuery
+- Vertex AI Pipelines
+- Vertex AI Custom Training
+- Google Cloud Storage
 - Pandas, NumPy
+- PySpark
 - Scikit-learn
 - LightGBM
 - XGBoost
+- Optuna
 - SHAP
 - MLflow
 - FastAPI
