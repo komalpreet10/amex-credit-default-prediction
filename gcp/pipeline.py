@@ -350,48 +350,51 @@ def amex_pipeline(
     training_image: str = TRAINING_IMAGE,
     serving_container_image_uri: str = "",
 ) -> None:
-    preprocess = submit_dataproc_pyspark_batch(
-        project=project,
-        region=region,
-        batch_id="amex-preprocess",
-        main_python_file_uri=PREPROCESS_SCRIPT,
-        py_file_uris=PY_FILES,
-        runtime_properties=DATAPROC_RUNTIME_PROPERTIES,
-        args=[
-            "--input",
-            raw_data,
-            "--output",
-            preprocessed_output,
-            "--overwrite",
-        ],
-    )
+    # Feature engineering has already been completed and loaded to BigQuery.
+    # Leave these steps here for full reruns, but keep them disabled when starting
+    # from the existing feature table.
+    # preprocess = submit_dataproc_pyspark_batch(
+    #     project=project,
+    #     region=region,
+    #     batch_id="amex-preprocess",
+    #     main_python_file_uri=PREPROCESS_SCRIPT,
+    #     py_file_uris=PY_FILES,
+    #     runtime_properties=DATAPROC_RUNTIME_PROPERTIES,
+    #     args=[
+    #         "--input",
+    #         raw_data,
+    #         "--output",
+    #         preprocessed_output,
+    #         "--overwrite",
+    #     ],
+    # )
 
-    build_features = submit_dataproc_pyspark_batch(
-        project=project,
-        region=region,
-        batch_id="amex-build-features",
-        main_python_file_uri=FEATURE_SCRIPT,
-        py_file_uris=PY_FILES,
-        runtime_properties=DATAPROC_RUNTIME_PROPERTIES,
-        args=[
-            "--input",
-            preprocessed_output,
-            "--labels",
-            raw_labels,
-            "--output",
-            feature_output,
-            "--overwrite",
-        ],
-    )
-    build_features.after(preprocess)
+    # build_features = submit_dataproc_pyspark_batch(
+    #     project=project,
+    #     region=region,
+    #     batch_id="amex-build-features",
+    #     main_python_file_uri=FEATURE_SCRIPT,
+    #     py_file_uris=PY_FILES,
+    #     runtime_properties=DATAPROC_RUNTIME_PROPERTIES,
+    #     args=[
+    #         "--input",
+    #         preprocessed_output,
+    #         "--labels",
+    #         raw_labels,
+    #         "--output",
+    #         feature_output,
+    #         "--overwrite",
+    #     ],
+    # )
+    # build_features.after(preprocess)
 
-    load_bq = load_features_to_bigquery(
-        project=project,
-        location=bq_location,
-        source_uri=f"{feature_output}*.parquet",
-        table=feature_table,
-    )
-    load_bq.after(build_features)
+    # load_bq = load_features_to_bigquery(
+    #     project=project,
+    #     location=bq_location,
+    #     source_uri=f"{feature_output}*.parquet",
+    #     table=feature_table,
+    # )
+    # load_bq.after(build_features)
 
     training = run_vertex_training_job(
         project=project,
@@ -408,7 +411,6 @@ def amex_pipeline(
         table=feature_table,
         output_dir=TUNING_ARTIFACTS,
     )
-    tuning.after(load_bq)
     training.after(tuning)
 
     # Model registration is disabled for the first GCP test run because this
