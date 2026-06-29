@@ -39,7 +39,7 @@ def submit_dataproc_pyspark_batch(
     py_file_uris: list[str],
     args: list[str],
 ) -> str:
-    import time
+    import uuid
 
     from google.cloud.dataproc_v1 import BatchControllerClient
     from google.cloud.dataproc_v1.types import Batch, PySparkBatch
@@ -56,19 +56,17 @@ def submit_dataproc_pyspark_batch(
         )
     )
 
+    actual_batch_id = f"{batch_id}-{uuid.uuid4().hex[:8]}"
     operation = client.create_batch(
-        request={"parent": parent, "batch": batch, "batch_id": batch_id}
+        request={"parent": parent, "batch": batch, "batch_id": actual_batch_id}
     )
     response = operation.result()
-
-    while True:
-        current = client.get_batch(name=response.name)
-        state_name = current.state.name
-        if state_name in {"SUCCEEDED", "FAILED", "CANCELLED"}:
-            if state_name != "SUCCEEDED":
-                raise RuntimeError(f"Dataproc batch {batch_id} ended as {state_name}")
-            return current.name
-        time.sleep(30)
+    if response.state.name != "SUCCEEDED":
+        raise RuntimeError(
+            f"Dataproc batch {actual_batch_id} ended as {response.state.name}: "
+            f"{response.state_message}"
+        )
+    return response.name
 
 
 @dsl.component(

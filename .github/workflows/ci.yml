@@ -124,6 +124,16 @@ jobs:
           docker build -f docker/Dockerfile.train -t "${IMAGE_URI}" .
           docker push "${IMAGE_URI}"
 
+      - name: Package and publish Spark job code
+        env:
+          VERTEX_PIPELINE_ROOT: ${{ secrets.VERTEX_PIPELINE_ROOT }}
+        run: |
+          ./gcp/spark/package_src.sh
+          PIPELINE_BUCKET="$(echo "${VERTEX_PIPELINE_ROOT}" | sed -E 's#^(gs://[^/]+).*#\1#')"
+          gcloud storage cp gcp/spark/preprocess.py "${PIPELINE_BUCKET}/code/gcp/spark/preprocess.py"
+          gcloud storage cp gcp/spark/build_features.py "${PIPELINE_BUCKET}/code/gcp/spark/build_features.py"
+          gcloud storage cp gcp/spark/amex_default.zip "${PIPELINE_BUCKET}/code/gcp/spark/amex_default.zip"
+
       - name: Compile Vertex AI Pipeline
         env:
           GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
