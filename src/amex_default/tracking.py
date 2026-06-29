@@ -14,7 +14,6 @@ from amex_default.config import (
     REPORTS_DIR,
 )
 
-
 METRIC_KEYS = [
     "roc_auc",
     "pr_auc",
@@ -77,7 +76,9 @@ def log_model_run(model_name: str) -> dict[str, Any] | None:
                     mlflow.log_metric(f"fold_{fold}_{key}", fold_metric[key])
 
         _log_artifact_if_exists(metrics_path, artifact_path="reports")
-        _log_artifact_if_exists(metrics_path.with_suffix(".csv"), artifact_path="reports")
+        _log_artifact_if_exists(
+            metrics_path.with_suffix(".csv"), artifact_path="reports"
+        )
         _log_artifact_if_exists(
             REPORTS_DIR / f"{model_name}_feature_importance.csv",
             artifact_path="reports",

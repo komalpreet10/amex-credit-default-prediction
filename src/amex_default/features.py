@@ -5,22 +5,7 @@ from collections.abc import Sequence
 import numpy as np
 import pandas as pd
 
-from amex_default.config import ID_COL, TARGET_COL
-
-
-DATE_COL = "S_2"
-CATEGORICAL_FEATURES = [
-    "D_63",
-    "D_64",
-    "B_30",
-    "B_38",
-    "D_114",
-    "D_116",
-    "D_117",
-    "D_120",
-    "D_126",
-    "D_68",
-]
+from amex_default.config import CATEGORICAL_FEATURES, DATE_COL, ID_COL, TARGET_COL
 
 _RECENT_AGG_STATS = ("mean", "std", "min", "max", "last")
 _FULL_AGG_STATS = (*_RECENT_AGG_STATS, "median")

@@ -1,5 +1,6 @@
 pandas
 numpy
+pyspark
 scikit-learn
 pyarrow
 matplotlib
@@ -14,3 +15,9 @@ pydantic
 requests
 jupyter
 ipykernel
+google-cloud-bigquery
+google-cloud-aiplatform
+google-cloud-storage
+google-cloud-dataproc
+google-cloud-pipeline-components
+kfp

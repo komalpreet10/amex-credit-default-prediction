@@ -16,6 +16,20 @@ MODEL_COMPARISON_PATH = PROCESSED_DIR / "model_comparison.csv"
 
 ID_COL = "customer_ID"
 TARGET_COL = "target"
+DATE_COL = "S_2"
+
+CATEGORICAL_FEATURES = [
+    "D_63",
+    "D_64",
+    "B_30",
+    "B_38",
+    "D_114",
+    "D_116",
+    "D_117",
+    "D_120",
+    "D_126",
+    "D_68",
+]
 
 RANDOM_STATE = 42
 N_SPLITS = 5
