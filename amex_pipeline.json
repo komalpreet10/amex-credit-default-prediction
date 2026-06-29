@@ -26,32 +26,6 @@
         }
       }
     },
-    "comp-register-model": {
-      "executorLabel": "exec-register-model",
-      "inputDefinitions": {
-        "parameters": {
-          "artifact_uri": {
-            "parameterType": "STRING"
-          },
-          "project": {
-            "parameterType": "STRING"
-          },
-          "region": {
-            "parameterType": "STRING"
-          },
-          "serving_container_image_uri": {
-            "parameterType": "STRING"
-          }
-        }
-      },
-      "outputDefinitions": {
-        "parameters": {
-          "Output": {
-            "parameterType": "STRING"
-          }
-        }
-      }
-    },
     "comp-run-vertex-training-job": {
       "executorLabel": "exec-run-vertex-training-job",
       "inputDefinitions": {
@@ -169,26 +143,6 @@
           "image": "python:3.11"
         }
       },
-      "exec-register-model": {
-        "container": {
-          "args": [
-            "--executor_input",
-            "{{$}}",
-            "--function_to_execute",
-            "register_model"
-          ],
-          "command": [
-            "sh",
-            "-c",
-            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'google-cloud-aiplatform'  &&  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.16.1' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"$0\" \"$@\"\n",
-            "sh",
-            "-ec",
-            "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
-            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef register_model(\n    project: str,\n    region: str,\n    artifact_uri: str,\n    serving_container_image_uri: str,\n) -> str:\n    from google.cloud import aiplatform\n\n    aiplatform.init(project=project, location=region)\n    model = aiplatform.Model.upload(\n        display_name=\"amex-lightgbm-credit-default\",\n        artifact_uri=artifact_uri,\n        serving_container_image_uri=serving_container_image_uri,\n        description=\"LightGBM AMEX credit default model\",\n        labels={\"project\": \"amex-credit-default\", \"model\": \"lightgbm\"},\n    )\n    model.wait()\n    return model.resource_name\n\n"
-          ],
-          "image": "python:3.11"
-        }
-      },
       "exec-run-vertex-training-job": {
         "container": {
           "args": [
@@ -290,36 +244,6 @@
           },
           "taskInfo": {
             "name": "load-features-to-bigquery"
-          }
-        },
-        "register-model": {
-          "cachingOptions": {
-            "enableCache": true
-          },
-          "componentRef": {
-            "name": "comp-register-model"
-          },
-          "dependentTasks": [
-            "run-vertex-training-job"
-          ],
-          "inputs": {
-            "parameters": {
-              "artifact_uri": {
-                "componentInputParameter": "model_artifacts"
-              },
-              "project": {
-                "componentInputParameter": "project"
-              },
-              "region": {
-                "componentInputParameter": "region"
-              },
-              "serving_container_image_uri": {
-                "componentInputParameter": "serving_container_image_uri"
-              }
-            }
-          },
-          "taskInfo": {
-            "name": "register-model"
           }
         },
         "run-vertex-training-job": {

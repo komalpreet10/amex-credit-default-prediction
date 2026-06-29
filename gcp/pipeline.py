@@ -340,13 +340,16 @@ def amex_pipeline(
     )
     training.after(load_bq)
 
-    registered_model = register_model(
-        project=project,
-        region=region,
-        artifact_uri=model_artifacts,
-        serving_container_image_uri=serving_container_image_uri,
-    )
-    registered_model.after(training)
+    # Model registration is disabled for the first GCP test run because this
+    # project does not publish a serving container yet. Training still writes
+    # model.txt, metrics, plots, feature importance, and SHAP artifacts to GCS.
+    # registered_model = register_model(
+    #     project=project,
+    #     region=region,
+    #     artifact_uri=model_artifacts,
+    #     serving_container_image_uri=serving_container_image_uri,
+    # )
+    # registered_model.after(training)
 
     # Online deployment is disabled for test runs to avoid an always-on endpoint.
     # Re-enable this block when you need real-time prediction serving.
