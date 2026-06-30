@@ -79,8 +79,8 @@ gcloud dataproc batches submit pyspark gcp/spark/build_features.py \
 
 ## Vertex training artifacts
 
-The Vertex training job saves model artifacts, metrics, evaluation plots, feature
-importance, and SHAP explainability plots to:
+The Vertex training job saves model artifacts, Optuna CV metrics, final-model
+feature importance, and SHAP explainability plots to:
 
 ```text
 gs://amex-credit-risk-ml-data/models/lightgbm/

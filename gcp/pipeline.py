@@ -150,7 +150,7 @@ def run_vertex_tuning_job(
             "--n-trials",
             "25",
             "--n-splits",
-            "3",
+            "5",
             "--max-rows",
             "100000",
         ],
