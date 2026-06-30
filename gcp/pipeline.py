@@ -1,41 +1,55 @@
-import os
-
 from kfp import compiler, dsl
 
-PROJECT_ID = os.getenv("GCP_PROJECT_ID", "amex-credit-risk-ml")
-REGION = os.getenv("GCP_REGION", "us-central1")
-BQ_LOCATION = "US"
-BUCKET = "amex-credit-risk-ml-data"
-PIPELINE_ROOT = os.getenv(
-    "VERTEX_PIPELINE_ROOT",
-    f"gs://{BUCKET}/pipeline-root/",
-)
-TRAINING_IMAGE = os.getenv("TRAINING_IMAGE_URI", "")
-
-PREPROCESS_SCRIPT = f"gs://{BUCKET}/code/gcp/spark/preprocess.py"
-FEATURE_SCRIPT = f"gs://{BUCKET}/code/gcp/spark/build_features.py"
-PY_FILES = [f"gs://{BUCKET}/code/gcp/spark/amex_default.zip"]
-DATAPROC_RUNTIME_PROPERTIES = {
-    "spark.executor.instances": "2",
-    "spark.driver.cores": "2",
-    "spark.executor.cores": "2",
-    "spark.driver.memory": "8g",
-    "spark.executor.memory": "8g",
-    "spark.dataproc.driver.disk.size": "250g",
-    "spark.dataproc.executor.disk.size": "250g",
-}
-
-RAW_DATA = f"gs://{BUCKET}/raw/train_data.csv"
-RAW_LABELS = f"gs://{BUCKET}/raw/train_labels.csv"
-PREPROCESSED = f"gs://{BUCKET}/processed/v1/train_preprocessed/"
-FEATURES = f"gs://{BUCKET}/processed/v1/train_features/"
-
-FEATURE_TABLE = f"{PROJECT_ID}.amex_ml.train_features"
-DRIFT_TABLE = f"{PROJECT_ID}.amex_ml.drift_metrics"
-MODEL_ARTIFACTS = f"gs://{BUCKET}/models/lightgbm/"
-TUNING_ARTIFACTS = f"gs://{BUCKET}/models/lightgbm/tuning/"
-TUNED_PARAMS_URI = f"{TUNING_ARTIFACTS}lightgbm_optuna_best_params.json"
-DRIFT_REPORT = f"gs://{BUCKET}/monitoring/drift_report.csv"
+try:
+    from gcp.config import (
+        BQ_LOCATION,
+        DATAPROC_RUNTIME_PROPERTIES,
+        DRIFT_REPORT,
+        DRIFT_TABLE,
+        ENDPOINT_DISPLAY_NAME,
+        FEATURE_SCRIPT,
+        FEATURE_TABLE,
+        FEATURES,
+        MODEL_ARTIFACTS,
+        MODEL_DISPLAY_NAME,
+        PIPELINE_ROOT,
+        PREPROCESSED,
+        PREPROCESS_SCRIPT,
+        PROJECT_ID,
+        PY_FILES,
+        RAW_DATA,
+        RAW_LABELS,
+        REGION,
+        SERVING_IMAGE,
+        TRAINING_IMAGE,
+        TUNED_PARAMS_URI,
+        TUNING_ARTIFACTS,
+    )
+except ModuleNotFoundError:
+    from config import (
+        BQ_LOCATION,
+        DATAPROC_RUNTIME_PROPERTIES,
+        DRIFT_REPORT,
+        DRIFT_TABLE,
+        ENDPOINT_DISPLAY_NAME,
+        FEATURE_SCRIPT,
+        FEATURE_TABLE,
+        FEATURES,
+        MODEL_ARTIFACTS,
+        MODEL_DISPLAY_NAME,
+        PIPELINE_ROOT,
+        PREPROCESSED,
+        PREPROCESS_SCRIPT,
+        PROJECT_ID,
+        PY_FILES,
+        RAW_DATA,
+        RAW_LABELS,
+        REGION,
+        SERVING_IMAGE,
+        TRAINING_IMAGE,
+        TUNED_PARAMS_URI,
+        TUNING_ARTIFACTS,
+    )
 
 
 @dsl.component(
@@ -141,21 +155,13 @@ def run_vertex_tuning_job(
     )
     job.run(
         args=[
-            "--project",
-            project,
-            "--table",
-            table,
-            "--output-dir",
-            output_dir,
             "--n-trials",
-            "25",
+            "15",
             "--n-splits",
             "5",
-            "--max-rows",
-            "100000",
         ],
         replica_count=1,
-        machine_type="n1-standard-8",
+        machine_type="n2-standard-16",
         sync=True,
     )
     return f"{output_dir.rstrip('/')}/lightgbm_optuna_best_params.json"
@@ -183,12 +189,6 @@ def run_vertex_training_job(
     )
     model = job.run(
         args=[
-            "--project",
-            project,
-            "--table",
-            table,
-            "--output-dir",
-            output_dir,
             "--params-uri",
             params_uri,
             "--shap-sample-size",
@@ -197,7 +197,7 @@ def run_vertex_training_job(
             "30",
         ],
         replica_count=1,
-        machine_type="n1-standard-8",
+        machine_type="n2-standard-16",
         sync=True,
     )
     return model.resource_name if model else output_dir
@@ -207,23 +207,32 @@ def run_vertex_training_job(
     base_image="python:3.11",
     packages_to_install=["google-cloud-aiplatform"],
 )
-def register_model(
+def upload_vertex_model(
     project: str,
     region: str,
     artifact_uri: str,
-    serving_container_image_uri: str,
+    serving_image: str,
+    model_display_name: str,
 ) -> str:
     from google.cloud import aiplatform
 
+    if not serving_image:
+        raise ValueError(
+            "serving_image is required. Build and push docker/Dockerfile.serve, "
+            "then pass SERVING_IMAGE_URI or the pipeline serving_image parameter."
+        )
+
     aiplatform.init(project=project, location=region)
     model = aiplatform.Model.upload(
-        display_name="amex-lightgbm-credit-default",
+        display_name=model_display_name,
         artifact_uri=artifact_uri,
-        serving_container_image_uri=serving_container_image_uri,
-        description="LightGBM AMEX credit default model",
+        serving_container_image_uri=serving_image,
+        serving_container_predict_route="/predict",
+        serving_container_health_route="/health",
+        serving_container_ports=[8080],
         labels={"project": "amex-credit-default", "model": "lightgbm"},
+        sync=True,
     )
-    model.wait()
     return model.resource_name
 
 
@@ -231,16 +240,17 @@ def register_model(
     base_image="python:3.11",
     packages_to_install=["google-cloud-aiplatform"],
 )
-def deploy_model(
+def deploy_model_to_endpoint(
     project: str,
     region: str,
     model_resource_name: str,
+    endpoint_display_name: str,
 ) -> str:
     from google.cloud import aiplatform
 
     aiplatform.init(project=project, location=region)
     model = aiplatform.Model(model_resource_name)
-    endpoint = aiplatform.Endpoint.create(display_name="amex-credit-default-endpoint")
+    endpoint = aiplatform.Endpoint.create(display_name=endpoint_display_name)
     model.deploy(
         endpoint=endpoint,
         deployed_model_display_name="amex-lightgbm",
@@ -248,6 +258,7 @@ def deploy_model(
         min_replica_count=1,
         max_replica_count=1,
         traffic_percentage=100,
+        sync=True,
     )
     return endpoint.resource_name
 
@@ -348,7 +359,7 @@ def amex_pipeline(
     feature_table: str = FEATURE_TABLE,
     model_artifacts: str = MODEL_ARTIFACTS,
     training_image: str = TRAINING_IMAGE,
-    serving_container_image_uri: str = "",
+    serving_image: str = SERVING_IMAGE,
 ) -> None:
     # Feature engineering has already been completed and loaded to BigQuery.
     # Leave these steps here for full reruns, but keep them disabled when starting
@@ -413,28 +424,26 @@ def amex_pipeline(
     )
     training.after(tuning)
 
-    # Model registration is disabled for the first GCP test run because this
-    # project does not publish a serving container yet. Training still writes
-    # model.txt, metrics, plots, feature importance, and SHAP artifacts to GCS.
-    # registered_model = register_model(
-    #     project=project,
-    #     region=region,
-    #     artifact_uri=model_artifacts,
-    #     serving_container_image_uri=serving_container_image_uri,
-    # )
-    # registered_model.after(training)
+    model = upload_vertex_model(
+        project=project,
+        region=region,
+        artifact_uri=model_artifacts,
+        serving_image=serving_image,
+        model_display_name=MODEL_DISPLAY_NAME,
+    )
+    model.after(training)
 
-    # Online deployment is disabled for test runs to avoid an always-on endpoint.
-    # Re-enable this block when you need real-time prediction serving.
-    # endpoint = deploy_model(
-    #     project=project,
-    #     region=region,
-    #     model_resource_name=registered_model.output,
-    # )
+    endpoint = deploy_model_to_endpoint(
+        project=project,
+        region=region,
+        model_resource_name=model.output,
+        endpoint_display_name=ENDPOINT_DISPLAY_NAME,
+    )
+    endpoint.after(model)
 
-    # Drift should compare two separately built feature tables, such as date-windowed
-    # train features now or train-vs-test features later. Do not compare train_features
-    # to itself inside the training pipeline.
+    # Drift should compare two separately built feature tables, such as
+    # train-window features vs a later scoring/current feature table. Keep this
+    # disabled until a current feature table exists.
     # drift = compute_feature_drift(
     #     project=project,
     #     location=bq_location,
@@ -443,7 +452,7 @@ def amex_pipeline(
     #     metrics_table=DRIFT_TABLE,
     #     output_uri=DRIFT_REPORT,
     # )
-    # drift.after(registered_model)
+    # drift.after(training)
 
 
 def main() -> None:

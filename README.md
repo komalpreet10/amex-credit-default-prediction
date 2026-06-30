@@ -1,6 +1,6 @@
 # American Express Credit Default Prediction
 
-End-to-end machine learning project for predicting customer credit default risk from monthly American Express statement data. The project covers exploratory analysis, PySpark customer-level feature engineering, BigQuery feature storage, Vertex AI Pipelines orchestration, Optuna-tuned LightGBM training, SHAP explainability, PSI drift analysis, and FastAPI model serving.
+End-to-end machine learning project for predicting customer credit default risk from monthly American Express statement data. The project covers exploratory analysis, PySpark customer-level feature engineering, BigQuery feature storage, Vertex AI Pipelines orchestration, Optuna-tuned LightGBM training, feature selection, SHAP explainability, and PSI drift analysis.
 
 ## Highlights
 
@@ -8,7 +8,7 @@ End-to-end machine learning project for predicting customer credit default risk 
 - Engineered `3,418` customer-level features from raw monthly statement records using aggregation, lag, recent-window, first-value, and difference features.
 - Compared LightGBM and XGBoost with cross-validation on `229,456` customer-level rows.
 - Implemented a GCP-native MLOps path using Dataproc Serverless, BigQuery, Vertex AI Pipelines, Vertex AI Custom Training, and GCS.
-- Served the final LightGBM model with FastAPI through a single `/predict` endpoint that accepts recent customer statement history, creates request-level features, aligns them to the trained schema, and returns default risk.
+- Added GCP-native model artifact versioning, feature selection, explainability, and drift monitoring components for reproducible credit risk modeling.
 
 ## Results
 
@@ -17,15 +17,13 @@ End-to-end machine learning project for predicting customer credit default risk 
 | LightGBM | 229,456 | 3,418 | 0.9593 | 0.8938 | 0.8104 | 0.8059 | 0.8081 |
 | XGBoost | 229,456 | 3,418 | 0.9597 | 0.8948 | 0.8124 | 0.8035 | 0.8079 |
 
-The final serving model is LightGBM trained on all engineered training rows. The current Vertex workflow uses Optuna 5-fold stratified cross-validation for tuning and evaluation, then trains the final model once on the full feature table.
+The final model is LightGBM trained on a selected feature subset. The current Vertex workflow uses Optuna 5-fold stratified cross-validation for tuning and evaluation, applies LightGBM cumulative gain feature selection, then trains the final model on the selected features.
 
 ## LightGBM Evaluation
 
 ![LightGBM ROC curve](docs/images/lightgbm_roc_curve.png)
 
 ![LightGBM precision recall curve](docs/images/lightgbm_pr_curve.png)
-
-![LightGBM confusion matrix](docs/images/lightgbm_confusion_matrix.png)
 
 ## Explainability
 
@@ -41,15 +39,20 @@ amex-credit-default/
 │   ├── main.py
 │   ├── model_loader.py
 │   └── schemas.py
+├── deployment/                  # GCP deployment and infrastructure scripts
+├── inference/                   # Cloud Function online scoring entrypoint
 ├── gcp/                         # GCP pipeline, Spark jobs, Vertex training, monitoring
 │   ├── pipeline.py
 │   ├── bigquery/
 │   ├── monitoring/
+│   ├── redis/
+│   ├── serving/
 │   ├── spark/
 │   └── vertex/
 ├── docker/                      # Vertex training container
 ├── docs/images/                 # README plots
 ├── notebooks/                   # EDA, training, comparison, SHAP, MLflow, API demo
+├── streaming/                   # Dataflow streaming feature refresh job
 ├── src/amex_default/            # Reusable ML pipeline code
 │   ├── data.py
 │   ├── evaluate.py
@@ -72,25 +75,76 @@ amex-credit-default/
 ## GCP Architecture
 
 ```text
+                           TRAINING / MLOPS
+
 Raw AMEX CSVs in GCS
-        ↓
-Dataproc Serverless PySpark preprocessing and feature engineering
-        ↓
+        |
+        v
+Dataproc Serverless PySpark preprocessing + feature engineering
+        |
+        v
 Feature Parquet in GCS
-        ↓
-BigQuery table: amex-credit-risk-ml.amex_ml.train_features
-        ↓
+        |
+        v
+BigQuery train_features
+        |
+        v
 Vertex AI Pipeline
-        ↓
-Vertex AI Custom Training: Optuna LightGBM tuning
-        ↓
-GCS tuned params: gs://amex-credit-risk-ml-data/models/lightgbm/tuning/
-        ↓
-Vertex AI Custom Training: final LightGBM training and evaluation
-        ↓
-GCS model artifacts, metrics, plots, feature importance, SHAP outputs
-        ↓
-FastAPI / serving layer for online default-risk scoring
+        |
+        +--> Optuna + 5-fold stratified CV
+        |       |
+        |       v
+        |   GCS tuning artifacts
+        |
+        +--> Final LightGBM training + feature selection
+                |
+                v
+        GCS model artifacts + metrics + SHAP
+                |
+                v
+        Vertex AI Model Registry
+                |
+                v
+        Vertex AI Endpoint
+
+
+                         ONLINE INFERENCE
+
+New statement cycle / scoring request
+        |
+        v
+Cloud Function: score(customer_ID)
+        |
+        +--> Tier 1: Memorystore Redis
+        |       key = features:{customer_ID}
+        |
+        +--> Tier 2: BigQuery train_features lookup
+        |       write-through to Redis on hit
+        |
+        +--> Tier 3: insufficient data response
+        |
+        v
+Vertex AI Endpoint
+        |
+        v
+Default probability + risk tier
+
+
+                     STREAMING FEATURE REFRESH
+
+Statement cycle close event
+        |
+        v
+Pub/Sub: statement-cycle-close
+        |
+        v
+Dataflow streaming job
+        |
+        v
+Incremental Redis feature update
+        |
+        v
+Pub/Sub DLQ on repeated failure
 ```
 
 Current GCP project and storage:
@@ -105,21 +159,87 @@ Model artifacts: gs://amex-credit-risk-ml-data/models/lightgbm/
 
 ## Vertex AI Pipeline
 
-The current compiled pipeline starts from the existing BigQuery feature table because feature engineering has already been completed and loaded. In `gcp/pipeline.py`, the Dataproc preprocessing, Dataproc feature build, and BigQuery load steps are kept in the codebase for full reruns, but are commented out for the current run.
+The current compiled pipeline starts from existing BigQuery feature tables because feature engineering has already been completed and loaded. In `gcp/pipeline.py`, the Dataproc preprocessing, Dataproc feature build, and BigQuery load components are kept for full reruns, but are commented out for the current run.
 
-Current runnable Vertex AI steps:
+Required BigQuery input before running the current pipeline:
+
+```text
+amex-credit-risk-ml.amex_ml.train_features
+```
+
+Active pipeline components:
+
+| Order | Component | Script | Input | Output |
+| ---: | --- | --- | --- | --- |
+| 1 | `run-vertex-tuning-job` | `gcp/vertex/tune_lightgbm_optuna.py` | `train_features` | Optuna best params and trial history in GCS |
+| 2 | `run-vertex-training-job` | `gcp/vertex/train.py` | `train_features` + tuned params | `model.txt`, `selected_feature_list.json`, metrics, SHAP, feature importance in GCS |
+| 3 | `upload-vertex-model` | inline KFP component | trained GCS artifacts + serving image | Model registered in Vertex AI Model Registry |
+| 4 | `deploy-model-to-endpoint` | inline KFP component | registered Vertex AI model | Deployed Vertex AI Endpoint |
+
+Component details:
 
 1. `run-vertex-tuning-job`
-   - Runs `gcp/vertex/tune_lightgbm_optuna.py`.
-   - Reads `amex-credit-risk-ml.amex_ml.train_features`.
    - Runs Optuna tuning for LightGBM with 5-fold stratified cross-validation.
-   - Writes best params and trial history to GCS.
+   - Uses full `train_features`; the production pipeline does not pass a row limit.
+   - Writes `lightgbm_optuna_best_params.json` and `lightgbm_optuna_trials.csv` to GCS.
 
 2. `run-vertex-training-job`
-   - Runs `gcp/vertex/train.py`.
    - Loads tuned params from GCS through `--params-uri`.
-   - Trains one final LightGBM model on the full feature table.
-   - Saves model artifacts, Optuna CV metrics, feature importance, and SHAP outputs to GCS.
+   - Selects features using 95% cumulative LightGBM gain importance with 300/1000 min/max bounds.
+   - Trains one final LightGBM model on the selected features.
+   - Saves model artifacts, selected feature list, Optuna CV metrics, feature importance, and SHAP outputs to GCS.
+
+3. `upload-vertex-model`
+   - Registers `gs://amex-credit-risk-ml-data/models/lightgbm/` as a Vertex AI model.
+   - Uses the custom serving image built from `docker/Dockerfile.serve`.
+
+4. `deploy-model-to-endpoint`
+   - Creates a Vertex AI Endpoint named `amex-credit-default-endpoint`.
+   - Deploys the LightGBM serving container for online prediction.
+
+Optional drift monitoring is implemented but remains disabled until a current/scoring feature table exists.
+
+Required serving image before endpoint deployment:
+
+```bash
+docker build -f docker/Dockerfile.serve \
+  -t us-central1-docker.pkg.dev/amex-credit-risk-ml/<repo>/amex-lightgbm-serving:<tag> .
+
+docker push us-central1-docker.pkg.dev/amex-credit-risk-ml/<repo>/amex-lightgbm-serving:<tag>
+```
+
+Pass that image as `SERVING_IMAGE_URI` or the pipeline `serving_image` parameter.
+
+## Online Feature Cache
+
+Memorystore for Redis is used as the low-latency feature cache for online inference. It stores customer-level feature vectors or recently updated aggregate values so the scoring service does not recompute the full PySpark feature pipeline per request.
+
+Default Redis settings are centralized in `gcp/config.py`:
+
+```text
+REDIS_INSTANCE_ID=amex-feature-cache
+REDIS_TIER=basic
+REDIS_SIZE_GB=1
+REDIS_VERSION=redis_7_0
+REDIS_NETWORK=default
+```
+
+Provision the Redis instance:
+
+```bash
+bash gcp/redis/provision_memorystore.sh
+```
+
+Override defaults if needed:
+
+```bash
+REDIS_INSTANCE_ID=amex-feature-cache \
+REDIS_SIZE_GB=1 \
+REDIS_NETWORK=default \
+bash gcp/redis/provision_memorystore.sh
+```
+
+The script prints the Redis host and port after provisioning. The online scoring service should use those values through environment variables when feature lookup is added.
 
 Compiled pipeline spec:
 
@@ -137,7 +257,21 @@ The Vertex AI pipeline runs Optuna tuning as a cloud step before final LightGBM 
 gs://amex-credit-risk-ml-data/models/lightgbm/tuning/lightgbm_optuna_best_params.json
 ```
 
-Final Vertex training loads that GCS file through `--params-uri`, records the Optuna CV score in `metrics.json`, and trains one final model on all available training rows.
+The tuning job also stores CV evaluation artifacts in the same tuning prefix:
+
+```text
+cv_metrics.json
+cv_classification_report.json
+lightgbm_optuna_trials.csv
+```
+
+Final Vertex training loads the tuned parameter file through `--params-uri`, records the Optuna CV score, CV ROC-AUC, PR-AUC, precision, recall, and F1 in `metrics.json`, selects a compact feature set, and trains one final model on the selected features. Final model artifacts are written to:
+
+```text
+gs://amex-credit-risk-ml-data/models/lightgbm/
+```
+
+This prefix contains `model.txt`, `metrics.json`, feature lists, `feature_importance.csv`, SHAP plots, and the uploaded MLflow run directory under `mlruns/`.
 
 ## Drift Monitoring
 
@@ -147,10 +281,10 @@ Expected drift outputs:
 
 ```text
 BigQuery metrics table: amex-credit-risk-ml.amex_ml.drift_metrics
-GCS report: gs://amex-credit-risk-ml-data/monitoring/train_window_drift_report.csv
+GCS report: gs://amex-credit-risk-ml-data/monitoring/train_vs_scoring_drift_report.csv
 ```
 
-## FastAPI Serving
+## Local FastAPI Demo
 
 Start the API from the project root:
 
@@ -226,9 +360,11 @@ Tracked runs include:
 - `model_comparison`
 - `final_lightgbm_model`
 
-Tracked metrics include ROC-AUC, PR-AUC, precision, recall, F1, confusion matrix counts, training time, inference time, and cross-validation metrics.
+Tracked metrics include ROC-AUC, PR-AUC, precision, recall, F1, training time, inference time, and cross-validation metrics.
 
-Tracked artifacts include metrics reports, feature importance files, ROC/PR curves, confusion matrices, SHAP plots, model comparison plots, and final model files.
+On Vertex AI, the final training job logs the same scalar metrics to Vertex AI Experiments and stores a self-contained MLflow run under `gs://amex-credit-risk-ml-data/models/lightgbm/mlruns/`.
+
+Tracked artifacts include metrics reports, feature importance files, SHAP plots, model comparison plots, and final model files.
 
 ## Tech Stack
 
