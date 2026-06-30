@@ -6,7 +6,7 @@ End-to-end machine learning project for predicting customer credit default risk 
 
 - Built a binary classification pipeline for credit default prediction using the American Express Default Prediction dataset.
 - Engineered `3,418` customer-level features from raw monthly statement records using aggregation, lag, recent-window, first-value, and difference features.
-- Compared LightGBM and XGBoost with 5-fold cross-validation on `229,456` customer-level rows.
+- Compared LightGBM and XGBoost with cross-validation on `229,456` customer-level rows.
 - Implemented a GCP-native MLOps path using Dataproc Serverless, BigQuery, Vertex AI Pipelines, Vertex AI Custom Training, and GCS.
 - Served the final LightGBM model with FastAPI through a single `/predict` endpoint that accepts recent customer statement history, creates request-level features, aligns them to the trained schema, and returns default risk.
 
@@ -17,7 +17,7 @@ End-to-end machine learning project for predicting customer credit default risk 
 | LightGBM | 229,456 | 3,418 | 0.9593 | 0.8938 | 0.8104 | 0.8059 | 0.8081 |
 | XGBoost | 229,456 | 3,418 | 0.9597 | 0.8948 | 0.8124 | 0.8035 | 0.8079 |
 
-The final serving model is LightGBM trained on all engineered training rows. Reported performance uses 5-fold out-of-fold cross-validation metrics.
+The final serving model is LightGBM trained on all engineered training rows. The current Vertex workflow uses Optuna 5-fold stratified cross-validation for tuning and evaluation, then trains the final model once on the full feature table.
 
 ## LightGBM Evaluation
 
@@ -112,14 +112,14 @@ Current runnable Vertex AI steps:
 1. `run-vertex-tuning-job`
    - Runs `gcp/vertex/tune_lightgbm_optuna.py`.
    - Reads `amex-credit-risk-ml.amex_ml.train_features`.
-   - Runs Optuna tuning for LightGBM.
+   - Runs Optuna tuning for LightGBM with 5-fold stratified cross-validation.
    - Writes best params and trial history to GCS.
 
 2. `run-vertex-training-job`
    - Runs `gcp/vertex/train.py`.
    - Loads tuned params from GCS through `--params-uri`.
-   - Trains and evaluates LightGBM.
-   - Saves model artifacts, metrics, plots, feature importance, and SHAP outputs to GCS.
+   - Trains one final LightGBM model on the full feature table.
+   - Saves model artifacts, Optuna CV metrics, feature importance, and SHAP outputs to GCS.
 
 Compiled pipeline spec:
 
@@ -137,7 +137,7 @@ The Vertex AI pipeline runs Optuna tuning as a cloud step before final LightGBM 
 gs://amex-credit-risk-ml-data/models/lightgbm/tuning/lightgbm_optuna_best_params.json
 ```
 
-Final Vertex training loads that GCS file through `--params-uri`.
+Final Vertex training loads that GCS file through `--params-uri`, records the Optuna CV score in `metrics.json`, and trains one final model on all available training rows.
 
 ## Drift Monitoring
 
@@ -226,9 +226,9 @@ Tracked runs include:
 - `model_comparison`
 - `final_lightgbm_model`
 
-Tracked metrics include ROC-AUC, PR-AUC, precision, recall, F1, confusion matrix counts, training time, inference time, and fold-level cross-validation metrics.
+Tracked metrics include ROC-AUC, PR-AUC, precision, recall, F1, confusion matrix counts, training time, inference time, and cross-validation metrics.
 
-Tracked artifacts include metrics reports, feature importance files, out-of-fold predictions, ROC/PR curves, confusion matrices, SHAP plots, model comparison plots, and final model files.
+Tracked artifacts include metrics reports, feature importance files, ROC/PR curves, confusion matrices, SHAP plots, model comparison plots, and final model files.
 
 ## Tech Stack
 
