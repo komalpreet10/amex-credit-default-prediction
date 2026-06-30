@@ -118,7 +118,10 @@ def compute_scale_pos_weight(y: pd.Series) -> float:
     spw = neg / pos
     LOGGER.info(
         "Class distribution — positives: %d (%.2f%%), negatives: %d, scale_pos_weight: %.4f",
-        pos, 100 * pos / len(y), neg, spw,
+        pos,
+        100 * pos / len(y),
+        neg,
+        spw,
     )
     return spw
 
@@ -273,6 +276,7 @@ def log_vertex_experiment(
 ) -> None:
     try:
         from google.cloud import aiplatform
+
         aiplatform.init(
             project=PROJECT_ID,
             location=REGION,
@@ -280,23 +284,27 @@ def log_vertex_experiment(
             staging_bucket=MODEL_ARTIFACTS,
         )
         with aiplatform.start_run() as run:
-            run.log_params({
-                "model": "lightgbm",
-                "final_num_boost_round": args.final_num_boost_round,
-                "feature_selection_threshold": args.feature_selection_threshold,
-                "min_selected_features": args.min_selected_features,
-                "max_selected_features": args.max_selected_features,
-                "shap_sample_size": args.shap_sample_size,
-                "shap_max_display": args.shap_max_display,
-                "disable_shap": args.disable_shap,
-                "evaluation_source": metrics.get("evaluation_source"),
-                "scale_pos_weight": metrics.get("scale_pos_weight"),
-            })
-            run.log_metrics({
-                key: value
-                for key, value in metrics.items()
-                if isinstance(value, (int, float))
-            })
+            run.log_params(
+                {
+                    "model": "lightgbm",
+                    "final_num_boost_round": args.final_num_boost_round,
+                    "feature_selection_threshold": args.feature_selection_threshold,
+                    "min_selected_features": args.min_selected_features,
+                    "max_selected_features": args.max_selected_features,
+                    "shap_sample_size": args.shap_sample_size,
+                    "shap_max_display": args.shap_max_display,
+                    "disable_shap": args.disable_shap,
+                    "evaluation_source": metrics.get("evaluation_source"),
+                    "scale_pos_weight": metrics.get("scale_pos_weight"),
+                }
+            )
+            run.log_metrics(
+                {
+                    key: value
+                    for key, value in metrics.items()
+                    if isinstance(value, (int, float))
+                }
+            )
     except Exception:
         LOGGER.exception("Vertex AI Experiment logging failed — continuing")
 
@@ -314,31 +322,35 @@ def log_mlflow_run(
         mlflow.set_experiment(EXPERIMENT)
 
         with mlflow.start_run(run_name="final-lightgbm-training"):
-            mlflow.log_params({
-                "model": "lightgbm",
-                "feature_table": FEATURE_TABLE,
-                "final_num_boost_round": args.final_num_boost_round,
-                "feature_selection_threshold": args.feature_selection_threshold,
-                "min_selected_features": args.min_selected_features,
-                "max_selected_features": args.max_selected_features,
-                "shap_sample_size": args.shap_sample_size,
-                "shap_max_display": args.shap_max_display,
-                "disable_shap": args.disable_shap,
-                "evaluation_source": metrics.get("evaluation_source"),
-            })
-            mlflow.log_metrics({
-                key: value
-                for key, value in metrics.items()
-                if isinstance(value, (int, float))
-            })
+            mlflow.log_params(
+                {
+                    "model": "lightgbm",
+                    "feature_table": FEATURE_TABLE,
+                    "final_num_boost_round": args.final_num_boost_round,
+                    "feature_selection_threshold": args.feature_selection_threshold,
+                    "min_selected_features": args.min_selected_features,
+                    "max_selected_features": args.max_selected_features,
+                    "shap_sample_size": args.shap_sample_size,
+                    "shap_max_display": args.shap_max_display,
+                    "disable_shap": args.disable_shap,
+                    "evaluation_source": metrics.get("evaluation_source"),
+                }
+            )
+            mlflow.log_metrics(
+                {
+                    key: value
+                    for key, value in metrics.items()
+                    if isinstance(value, (int, float))
+                }
+            )
             for path in artifact_dir.rglob("*"):
                 if path.is_file() and "mlruns" not in path.parts:
                     artifact_path = path.relative_to(artifact_dir).parent
                     mlflow.log_artifact(
                         str(path),
-                        artifact_path=None
-                        if str(artifact_path) == "."
-                        else str(artifact_path),
+                        artifact_path=(
+                            None if str(artifact_path) == "." else str(artifact_path)
+                        ),
                     )
         LOGGER.info("MLflow run logged under %s", tracking_dir)
     except Exception:
@@ -367,8 +379,10 @@ def main() -> None:
         output_dir = Path(tmp_dir)
 
         # ── Step 1: Selector model (100 rounds — only needs feature ranking) ──
-        LOGGER.info("Training selector model (%d rounds) for feature importance",
-                    SELECTOR_NUM_BOOST_ROUND)
+        LOGGER.info(
+            "Training selector model (%d rounds) for feature importance",
+            SELECTOR_NUM_BOOST_ROUND,
+        )
         selector_model = train_model(X, y, model_params, SELECTOR_NUM_BOOST_ROUND)
         feature_importance = build_feature_importance(selector_model)
         selected_features = select_features(
@@ -379,19 +393,29 @@ def main() -> None:
         )
         LOGGER.info(
             "Selected %d of %d features (threshold=%.3f)",
-            len(selected_features), X.shape[1], args.feature_selection_threshold,
+            len(selected_features),
+            X.shape[1],
+            args.feature_selection_threshold,
         )
 
         # ── Step 2: Final model (full rounds, selected features only) ─────────
         X_selected = X[selected_features]
-        LOGGER.info("Training final model (%d rounds) on %d selected features",
-                    args.final_num_boost_round, len(selected_features))
-        final_model = train_model(X_selected, y, model_params, args.final_num_boost_round)
-        feature_importance["selected"] = feature_importance["feature"].isin(selected_features)
+        LOGGER.info(
+            "Training final model (%d rounds) on %d selected features",
+            args.final_num_boost_round,
+            len(selected_features),
+        )
+        final_model = train_model(
+            X_selected, y, model_params, args.final_num_boost_round
+        )
+        feature_importance["selected"] = feature_importance["feature"].isin(
+            selected_features
+        )
 
         # ── Step 3: Build combined metrics ────────────────────────────────────
         metrics = build_metrics(
-            X_selected, args,
+            X_selected,
+            args,
             tuned_params=tuned_params,
             tuning_result={**tuning_result, "full_feature_count": int(X.shape[1])},
             scale_pos_weight=scale_pos_weight,

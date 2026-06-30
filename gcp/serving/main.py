@@ -10,7 +10,6 @@ import pandas as pd
 from fastapi import FastAPI, HTTPException
 from google.cloud import storage
 
-
 MODEL_DIR = Path(os.getenv("AIP_MODEL_DIR", "/tmp/vertex_model"))
 MODEL_URI = os.getenv("AIP_STORAGE_URI", "")
 PREDICT_ROUTE = os.getenv("AIP_PREDICT_ROUTE", "/predict")
@@ -65,7 +64,9 @@ def load_model() -> tuple[lgb.Booster, list[str]]:
     return _model, _feature_list
 
 
-def align_instances(instances: list[dict[str, Any]], feature_list: list[str]) -> pd.DataFrame:
+def align_instances(
+    instances: list[dict[str, Any]], feature_list: list[str]
+) -> pd.DataFrame:
     rows = []
     for instance in instances:
         rows.append({feature: instance.get(feature, 0.0) for feature in feature_list})

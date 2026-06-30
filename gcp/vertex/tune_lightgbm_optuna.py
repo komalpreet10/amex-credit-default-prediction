@@ -88,7 +88,9 @@ def suggest_params(trial: optuna.Trial) -> dict[str, object]:
         "num_leaves": trial.suggest_int("num_leaves", 24, 256),
         "max_depth": trial.suggest_int("max_depth", 3, 12),
         "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 50, 2000),
-        "min_child_weight": trial.suggest_float("min_child_weight", 1e-3, 10.0, log=True),
+        "min_child_weight": trial.suggest_float(
+            "min_child_weight", 1e-3, 10.0, log=True
+        ),
         "feature_fraction": trial.suggest_float("feature_fraction", 0.55, 1.0),
         "bagging_fraction": trial.suggest_float("bagging_fraction", 0.55, 1.0),
         "bagging_freq": trial.suggest_int("bagging_freq", 1, 10),
@@ -174,15 +176,17 @@ def build_objective(
             best_iterations.append(best_iteration)
             oof_true.extend(y_valid.tolist())
             oof_pred.extend(pred_label.tolist())
-            fold_metrics.append({
-                "fold": fold,
-                **metrics,
-                "true_negative": int(tn),
-                "false_positive": int(fp),
-                "false_negative": int(fn),
-                "true_positive": int(tp),
-                "best_iteration": best_iteration,
-            })
+            fold_metrics.append(
+                {
+                    "fold": fold,
+                    **metrics,
+                    "true_negative": int(tn),
+                    "false_positive": int(fp),
+                    "false_negative": int(fn),
+                    "true_positive": int(tp),
+                    "best_iteration": best_iteration,
+                }
+            )
             trial.report(float(np.mean(fold_scores)), step=fold)
 
             if trial.should_prune():
