@@ -142,9 +142,11 @@ jobs:
           TRAINING_IMAGE_URI: ${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/amex-ml/amex-train:latest
         run: |
           python -m gcp.pipeline
+          python -m gcp.pipeline_smoke
 
-      - name: Publish compiled pipeline template
+      - name: Publish compiled pipeline templates
         env:
           VERTEX_PIPELINE_ROOT: ${{ secrets.VERTEX_PIPELINE_ROOT }}
         run: |
           gcloud storage cp amex_pipeline.json ${VERTEX_PIPELINE_ROOT%/}/templates/amex_pipeline.json
+          gcloud storage cp amex_pipeline_smoke.json ${VERTEX_PIPELINE_ROOT%/}/templates/amex_pipeline_smoke.json

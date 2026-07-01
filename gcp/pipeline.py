@@ -127,24 +127,44 @@ def run_vertex_tuning_job(
     training_image: str,
     table: str,
     output_dir: str,
+    display_name: str,
+    n_trials: int,
+    n_splits: int,
+    num_boost_round: int,
+    early_stopping_rounds: int,
+    max_rows: int,
+    balanced_smoke_sample: bool,
+    replica_count: int,
+    machine_type: str,
 ) -> str:
     from google.cloud import aiplatform
 
     aiplatform.init(project=project, location=region, staging_bucket=output_dir)
     job = aiplatform.CustomContainerTrainingJob(
-        display_name=TUNING_JOB_DISPLAY_NAME,
+        display_name=display_name,
         container_uri=training_image,
         command=["python", "gcp/vertex/tune_lightgbm_optuna.py"],
     )
+    job_args = [
+        "--n-trials",
+        str(n_trials),
+        "--n-splits",
+        str(n_splits),
+        "--num-boost-round",
+        str(num_boost_round),
+        "--early-stopping-rounds",
+        str(early_stopping_rounds),
+        "--output-dir",
+        output_dir,
+    ]
+    if max_rows > 0:
+        job_args.extend(["--max-rows", str(max_rows)])
+    if balanced_smoke_sample:
+        job_args.append("--balanced-smoke-sample")
     job.run(
-        args=[
-            "--n-trials",
-            str(TUNING_N_TRIALS),
-            "--n-splits",
-            str(TUNING_N_SPLITS),
-        ],
-        replica_count=TUNING_REPLICA_COUNT,
-        machine_type=TUNING_MACHINE_TYPE,
+        args=job_args,
+        replica_count=replica_count,
+        machine_type=machine_type,
         sync=True,
     )
     return f"{output_dir.rstrip('/')}/lightgbm_optuna_best_params.json"
@@ -161,26 +181,55 @@ def run_vertex_training_job(
     table: str,
     output_dir: str,
     params_uri: str,
+    display_name: str,
+    shap_sample_size: int,
+    shap_max_display: int,
+    max_rows: int,
+    balanced_smoke_sample: bool,
+    selector_num_boost_round: int,
+    final_num_boost_round: int,
+    min_selected_features: int,
+    max_selected_features: int,
+    disable_shap: bool,
+    replica_count: int,
+    machine_type: str,
 ) -> str:
     from google.cloud import aiplatform
 
     aiplatform.init(project=project, location=region, staging_bucket=output_dir)
     job = aiplatform.CustomContainerTrainingJob(
-        display_name=TRAINING_JOB_DISPLAY_NAME,
+        display_name=display_name,
         container_uri=training_image,
         command=["python", "gcp/vertex/train.py"],
     )
+    job_args = [
+        "--params-uri",
+        params_uri,
+        "--output-dir",
+        output_dir,
+        "--selector-num-boost-round",
+        str(selector_num_boost_round),
+        "--final-num-boost-round",
+        str(final_num_boost_round),
+        "--min-selected-features",
+        str(min_selected_features),
+        "--max-selected-features",
+        str(max_selected_features),
+        "--shap-sample-size",
+        str(shap_sample_size),
+        "--shap-max-display",
+        str(shap_max_display),
+    ]
+    if max_rows > 0:
+        job_args.extend(["--max-rows", str(max_rows)])
+    if balanced_smoke_sample:
+        job_args.append("--balanced-smoke-sample")
+    if disable_shap:
+        job_args.append("--disable-shap")
     model = job.run(
-        args=[
-            "--params-uri",
-            params_uri,
-            "--shap-sample-size",
-            str(TRAINING_SHAP_SAMPLE_SIZE),
-            "--shap-max-display",
-            str(TRAINING_SHAP_MAX_DISPLAY),
-        ],
-        replica_count=TRAINING_REPLICA_COUNT,
-        machine_type=TRAINING_MACHINE_TYPE,
+        args=job_args,
+        replica_count=replica_count,
+        machine_type=machine_type,
         sync=True,
     )
     return model.resource_name if model else output_dir
@@ -228,6 +277,11 @@ def deploy_model_to_endpoint(
     region: str,
     model_resource_name: str,
     endpoint_display_name: str,
+    deployed_model_display_name: str,
+    machine_type: str,
+    min_replica_count: int,
+    max_replica_count: int,
+    traffic_percentage: int,
 ) -> str:
     from google.cloud import aiplatform
 
@@ -243,11 +297,11 @@ def deploy_model_to_endpoint(
         endpoint = aiplatform.Endpoint.create(display_name=endpoint_display_name)
     model.deploy(
         endpoint=endpoint,
-        deployed_model_display_name=DEPLOYED_MODEL_DISPLAY_NAME,
-        machine_type=ENDPOINT_MACHINE_TYPE,
-        min_replica_count=ENDPOINT_MIN_REPLICA_COUNT,
-        max_replica_count=ENDPOINT_MAX_REPLICA_COUNT,
-        traffic_percentage=ENDPOINT_TRAFFIC_PERCENTAGE,
+        deployed_model_display_name=deployed_model_display_name,
+        machine_type=machine_type,
+        min_replica_count=min_replica_count,
+        max_replica_count=max_replica_count,
+        traffic_percentage=traffic_percentage,
         sync=True,
     )
     return endpoint.resource_name
@@ -404,6 +458,18 @@ def amex_pipeline(
         table=feature_table,
         output_dir=model_artifacts,
         params_uri=TUNED_PARAMS_URI,
+        display_name=TRAINING_JOB_DISPLAY_NAME,
+        shap_sample_size=TRAINING_SHAP_SAMPLE_SIZE,
+        shap_max_display=TRAINING_SHAP_MAX_DISPLAY,
+        max_rows=0,
+        balanced_smoke_sample=False,
+        selector_num_boost_round=100,
+        final_num_boost_round=300,
+        min_selected_features=300,
+        max_selected_features=1000,
+        disable_shap=False,
+        replica_count=TRAINING_REPLICA_COUNT,
+        machine_type=TRAINING_MACHINE_TYPE,
     )
     tuning = run_vertex_tuning_job(
         project=project,
@@ -411,6 +477,15 @@ def amex_pipeline(
         training_image=training_image,
         table=feature_table,
         output_dir=TUNING_ARTIFACTS,
+        display_name=TUNING_JOB_DISPLAY_NAME,
+        n_trials=TUNING_N_TRIALS,
+        n_splits=TUNING_N_SPLITS,
+        num_boost_round=700,
+        early_stopping_rounds=50,
+        max_rows=0,
+        balanced_smoke_sample=False,
+        replica_count=TUNING_REPLICA_COUNT,
+        machine_type=TUNING_MACHINE_TYPE,
     )
     training.after(tuning)
 
@@ -428,6 +503,11 @@ def amex_pipeline(
         region=region,
         model_resource_name=model.output,
         endpoint_display_name=ENDPOINT_DISPLAY_NAME,
+        deployed_model_display_name=DEPLOYED_MODEL_DISPLAY_NAME,
+        machine_type=ENDPOINT_MACHINE_TYPE,
+        min_replica_count=ENDPOINT_MIN_REPLICA_COUNT,
+        max_replica_count=ENDPOINT_MAX_REPLICA_COUNT,
+        traffic_percentage=ENDPOINT_TRAFFIC_PERCENTAGE,
     )
     endpoint.after(model)
 

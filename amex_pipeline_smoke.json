@@ -1,46 +1,5 @@
 {
   "components": {
-    "comp-deploy-model-to-endpoint": {
-      "executorLabel": "exec-deploy-model-to-endpoint",
-      "inputDefinitions": {
-        "parameters": {
-          "deployed_model_display_name": {
-            "parameterType": "STRING"
-          },
-          "endpoint_display_name": {
-            "parameterType": "STRING"
-          },
-          "machine_type": {
-            "parameterType": "STRING"
-          },
-          "max_replica_count": {
-            "parameterType": "NUMBER_INTEGER"
-          },
-          "min_replica_count": {
-            "parameterType": "NUMBER_INTEGER"
-          },
-          "model_resource_name": {
-            "parameterType": "STRING"
-          },
-          "project": {
-            "parameterType": "STRING"
-          },
-          "region": {
-            "parameterType": "STRING"
-          },
-          "traffic_percentage": {
-            "parameterType": "NUMBER_INTEGER"
-          }
-        }
-      },
-      "outputDefinitions": {
-        "parameters": {
-          "Output": {
-            "parameterType": "STRING"
-          }
-        }
-      }
-    },
     "comp-run-vertex-training-job": {
       "executorLabel": "exec-run-vertex-training-job",
       "inputDefinitions": {
@@ -164,60 +123,11 @@
           }
         }
       }
-    },
-    "comp-upload-vertex-model": {
-      "executorLabel": "exec-upload-vertex-model",
-      "inputDefinitions": {
-        "parameters": {
-          "artifact_uri": {
-            "parameterType": "STRING"
-          },
-          "model_display_name": {
-            "parameterType": "STRING"
-          },
-          "project": {
-            "parameterType": "STRING"
-          },
-          "region": {
-            "parameterType": "STRING"
-          },
-          "serving_image": {
-            "parameterType": "STRING"
-          }
-        }
-      },
-      "outputDefinitions": {
-        "parameters": {
-          "Output": {
-            "parameterType": "STRING"
-          }
-        }
-      }
     }
   },
   "defaultPipelineRoot": "gs://amex-credit-risk-ml-data/pipeline-root/",
   "deploymentSpec": {
     "executors": {
-      "exec-deploy-model-to-endpoint": {
-        "container": {
-          "args": [
-            "--executor_input",
-            "{{$}}",
-            "--function_to_execute",
-            "deploy_model_to_endpoint"
-          ],
-          "command": [
-            "sh",
-            "-c",
-            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'google-cloud-aiplatform'  &&  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.16.1' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"$0\" \"$@\"\n",
-            "sh",
-            "-ec",
-            "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
-            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef deploy_model_to_endpoint(\n    project: str,\n    region: str,\n    model_resource_name: str,\n    endpoint_display_name: str,\n    deployed_model_display_name: str,\n    machine_type: str,\n    min_replica_count: int,\n    max_replica_count: int,\n    traffic_percentage: int,\n) -> str:\n    from google.cloud import aiplatform\n\n    aiplatform.init(project=project, location=region)\n    model = aiplatform.Model(model_resource_name)\n    endpoints = aiplatform.Endpoint.list(\n        filter=f'display_name=\"{endpoint_display_name}\"',\n        order_by=\"create_time desc\",\n    )\n    if endpoints:\n        endpoint = endpoints[0]\n    else:\n        endpoint = aiplatform.Endpoint.create(display_name=endpoint_display_name)\n    model.deploy(\n        endpoint=endpoint,\n        deployed_model_display_name=deployed_model_display_name,\n        machine_type=machine_type,\n        min_replica_count=min_replica_count,\n        max_replica_count=max_replica_count,\n        traffic_percentage=traffic_percentage,\n        sync=True,\n    )\n    return endpoint.resource_name\n\n"
-          ],
-          "image": "python:3.11"
-        }
-      },
       "exec-run-vertex-training-job": {
         "container": {
           "args": [
@@ -257,95 +167,15 @@
           ],
           "image": "python:3.11"
         }
-      },
-      "exec-upload-vertex-model": {
-        "container": {
-          "args": [
-            "--executor_input",
-            "{{$}}",
-            "--function_to_execute",
-            "upload_vertex_model"
-          ],
-          "command": [
-            "sh",
-            "-c",
-            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'google-cloud-aiplatform'  &&  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.16.1' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"$0\" \"$@\"\n",
-            "sh",
-            "-ec",
-            "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
-            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef upload_vertex_model(\n    project: str,\n    region: str,\n    artifact_uri: str,\n    serving_image: str,\n    model_display_name: str,\n) -> str:\n    from google.cloud import aiplatform\n\n    if not serving_image:\n        raise ValueError(\n            \"serving_image is required. Build and push docker/Dockerfile.serve, \"\n            \"then pass SERVING_IMAGE_URI or the pipeline serving_image parameter.\"\n        )\n\n    aiplatform.init(project=project, location=region)\n    model = aiplatform.Model.upload(\n        display_name=model_display_name,\n        artifact_uri=artifact_uri,\n        serving_container_image_uri=serving_image,\n        serving_container_predict_route=\"/predict\",\n        serving_container_health_route=\"/health\",\n        serving_container_ports=[8080],\n        labels={\"project\": \"amex-credit-default\", \"model\": \"lightgbm\"},\n        sync=True,\n    )\n    return model.resource_name\n\n"
-          ],
-          "image": "python:3.11"
-        }
       }
     }
   },
   "pipelineInfo": {
-    "name": "amex-credit-default-mlops"
+    "name": "amex-credit-default-smoke-test"
   },
   "root": {
     "dag": {
       "tasks": {
-        "deploy-model-to-endpoint": {
-          "cachingOptions": {
-            "enableCache": true
-          },
-          "componentRef": {
-            "name": "comp-deploy-model-to-endpoint"
-          },
-          "dependentTasks": [
-            "upload-vertex-model"
-          ],
-          "inputs": {
-            "parameters": {
-              "deployed_model_display_name": {
-                "runtimeValue": {
-                  "constant": "amex-lightgbm"
-                }
-              },
-              "endpoint_display_name": {
-                "runtimeValue": {
-                  "constant": "amex-credit-default-endpoint"
-                }
-              },
-              "machine_type": {
-                "runtimeValue": {
-                  "constant": "n1-standard-2"
-                }
-              },
-              "max_replica_count": {
-                "runtimeValue": {
-                  "constant": 1.0
-                }
-              },
-              "min_replica_count": {
-                "runtimeValue": {
-                  "constant": 1.0
-                }
-              },
-              "model_resource_name": {
-                "taskOutputParameter": {
-                  "outputParameterKey": "Output",
-                  "producerTask": "upload-vertex-model"
-                }
-              },
-              "project": {
-                "componentInputParameter": "project"
-              },
-              "region": {
-                "componentInputParameter": "region"
-              },
-              "traffic_percentage": {
-                "runtimeValue": {
-                  "constant": 100.0
-                }
-              }
-            }
-          },
-          "taskInfo": {
-            "name": "deploy-model-to-endpoint"
-          }
-        },
         "run-vertex-training-job": {
           "cachingOptions": {
             "enableCache": true
@@ -360,50 +190,51 @@
             "parameters": {
               "balanced_smoke_sample": {
                 "runtimeValue": {
-                  "constant": false
+                  "constant": true
                 }
               },
               "disable_shap": {
                 "runtimeValue": {
-                  "constant": false
+                  "constant": true
                 }
               },
               "display_name": {
                 "runtimeValue": {
-                  "constant": "amex-lightgbm-training"
+                  "constant": "amex-lightgbm-training-smoke-test"
                 }
               },
               "final_num_boost_round": {
                 "runtimeValue": {
-                  "constant": 300.0
+                  "constant": 10.0
                 }
               },
               "machine_type": {
                 "runtimeValue": {
-                  "constant": "n2-standard-16"
+                  "constant": "n2-standard-4"
                 }
               },
               "max_rows": {
-                "runtimeValue": {
-                  "constant": 0.0
-                }
+                "componentInputParameter": "max_rows"
               },
               "max_selected_features": {
                 "runtimeValue": {
-                  "constant": 1000.0
+                  "constant": 100.0
                 }
               },
               "min_selected_features": {
                 "runtimeValue": {
-                  "constant": 300.0
+                  "constant": 25.0
                 }
               },
               "output_dir": {
-                "componentInputParameter": "model_artifacts"
+                "runtimeValue": {
+                  "constant": "gs://amex-credit-risk-ml-data/models/lightgbm/smoke/"
+                }
               },
               "params_uri": {
-                "runtimeValue": {
-                  "constant": "gs://amex-credit-risk-ml-data/models/lightgbm/tuning/lightgbm_optuna_best_params.json"
+                "taskOutputParameter": {
+                  "outputParameterKey": "Output",
+                  "producerTask": "run-vertex-tuning-job"
                 }
               },
               "project": {
@@ -419,17 +250,17 @@
               },
               "selector_num_boost_round": {
                 "runtimeValue": {
-                  "constant": 100.0
+                  "constant": 10.0
                 }
               },
               "shap_max_display": {
                 "runtimeValue": {
-                  "constant": 30.0
+                  "constant": 10.0
                 }
               },
               "shap_sample_size": {
                 "runtimeValue": {
-                  "constant": 3000.0
+                  "constant": 1.0
                 }
               },
               "table": {
@@ -455,47 +286,45 @@
             "parameters": {
               "balanced_smoke_sample": {
                 "runtimeValue": {
-                  "constant": false
+                  "constant": true
                 }
               },
               "display_name": {
                 "runtimeValue": {
-                  "constant": "amex-lightgbm-optuna-tuning"
+                  "constant": "amex-lightgbm-optuna-smoke-test"
                 }
               },
               "early_stopping_rounds": {
                 "runtimeValue": {
-                  "constant": 50.0
+                  "constant": 5.0
                 }
               },
               "machine_type": {
                 "runtimeValue": {
-                  "constant": "n2-standard-16"
+                  "constant": "n2-standard-4"
                 }
               },
               "max_rows": {
-                "runtimeValue": {
-                  "constant": 0.0
-                }
+                "componentInputParameter": "max_rows"
               },
               "n_splits": {
                 "runtimeValue": {
-                  "constant": 5.0
+                  "constant": 2.0
                 }
               },
               "n_trials": {
                 "runtimeValue": {
-                  "constant": 15.0
+                  "constant": 1.0
                 }
               },
               "num_boost_round": {
                 "runtimeValue": {
-                  "constant": 700.0
+                  "constant": 25.0
                 }
               },
               "output_dir": {
                 "runtimeValue": {
-                  "constant": "gs://amex-credit-risk-ml-data/models/lightgbm/tuning/"
+                  "constant": "gs://amex-credit-risk-ml-data/models/lightgbm/smoke/tuning/"
                 }
               },
               "project": {
@@ -520,93 +349,28 @@
           "taskInfo": {
             "name": "run-vertex-tuning-job"
           }
-        },
-        "upload-vertex-model": {
-          "cachingOptions": {
-            "enableCache": true
-          },
-          "componentRef": {
-            "name": "comp-upload-vertex-model"
-          },
-          "dependentTasks": [
-            "run-vertex-training-job"
-          ],
-          "inputs": {
-            "parameters": {
-              "artifact_uri": {
-                "componentInputParameter": "model_artifacts"
-              },
-              "model_display_name": {
-                "runtimeValue": {
-                  "constant": "amex-lightgbm-credit-default"
-                }
-              },
-              "project": {
-                "componentInputParameter": "project"
-              },
-              "region": {
-                "componentInputParameter": "region"
-              },
-              "serving_image": {
-                "componentInputParameter": "serving_image"
-              }
-            }
-          },
-          "taskInfo": {
-            "name": "upload-vertex-model"
-          }
         }
       }
     },
     "inputDefinitions": {
       "parameters": {
-        "bq_location": {
-          "defaultValue": "US",
-          "isOptional": true,
-          "parameterType": "STRING"
-        },
-        "feature_output": {
-          "defaultValue": "gs://amex-credit-risk-ml-data/processed/v1/train_features/",
-          "isOptional": true,
-          "parameterType": "STRING"
-        },
         "feature_table": {
           "defaultValue": "amex-credit-risk-ml.amex_ml.train_features",
           "isOptional": true,
           "parameterType": "STRING"
         },
-        "model_artifacts": {
-          "defaultValue": "gs://amex-credit-risk-ml-data/models/lightgbm/",
+        "max_rows": {
+          "defaultValue": 2000.0,
           "isOptional": true,
-          "parameterType": "STRING"
-        },
-        "preprocessed_output": {
-          "defaultValue": "gs://amex-credit-risk-ml-data/processed/v1/train_preprocessed/",
-          "isOptional": true,
-          "parameterType": "STRING"
+          "parameterType": "NUMBER_INTEGER"
         },
         "project": {
           "defaultValue": "amex-credit-risk-ml",
           "isOptional": true,
           "parameterType": "STRING"
         },
-        "raw_data": {
-          "defaultValue": "gs://amex-credit-risk-ml-data/raw/train_data.csv",
-          "isOptional": true,
-          "parameterType": "STRING"
-        },
-        "raw_labels": {
-          "defaultValue": "gs://amex-credit-risk-ml-data/raw/train_labels.csv",
-          "isOptional": true,
-          "parameterType": "STRING"
-        },
         "region": {
           "defaultValue": "us-central1",
-          "isOptional": true,
-          "parameterType": "STRING"
-        },
-        "serving_image": {
-          "defaultValue": "",
           "isOptional": true,
           "parameterType": "STRING"
         },

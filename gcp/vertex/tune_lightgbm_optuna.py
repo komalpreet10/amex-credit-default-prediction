@@ -44,6 +44,9 @@ BASE_PARAMS = {
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--study-name", default="lightgbm-optuna")
+    parser.add_argument("--output-dir", default=TUNING_ARTIFACTS)
+    parser.add_argument("--max-rows", type=int, default=None)
+    parser.add_argument("--balanced-smoke-sample", action="store_true")
     parser.add_argument("--n-trials", type=int, default=25)
     parser.add_argument("--n-splits", type=int, default=3)
     parser.add_argument("--num-boost-round", type=int, default=700)
@@ -55,9 +58,41 @@ def parse_args() -> argparse.Namespace:
 
 def read_training_data(args: argparse.Namespace) -> pd.DataFrame:
     client = bigquery.Client(project=PROJECT_ID, location=BQ_LOCATION)
-    query = f"SELECT * FROM `{FEATURE_TABLE}`"
+    if args.max_rows is None:
+        query = f"SELECT * FROM `{FEATURE_TABLE}`"
+        LOGGER.info("Reading tuning data from BigQuery table %s", FEATURE_TABLE)
+        return client.query(query).result().to_dataframe()
 
-    LOGGER.info("Reading tuning data from BigQuery table %s", FEATURE_TABLE)
+    if args.balanced_smoke_sample:
+        positive_rows = max(1, args.max_rows // 2)
+        negative_rows = args.max_rows - positive_rows
+        query = f"""
+        (
+          SELECT * FROM `{FEATURE_TABLE}`
+          WHERE {TARGET_COL} = 1
+          LIMIT {positive_rows}
+        )
+        UNION ALL
+        (
+          SELECT * FROM `{FEATURE_TABLE}`
+          WHERE {TARGET_COL} = 0
+          LIMIT {negative_rows}
+        )
+        """
+        LOGGER.info(
+            "Reading balanced tuning smoke sample from %s: %d positive rows, %d negative rows",
+            FEATURE_TABLE,
+            positive_rows,
+            negative_rows,
+        )
+        return client.query(query).result().to_dataframe()
+
+    query = f"SELECT * FROM `{FEATURE_TABLE}` LIMIT {args.max_rows}"
+    LOGGER.info(
+        "Reading tuning smoke sample from %s: max_rows=%d",
+        FEATURE_TABLE,
+        args.max_rows,
+    )
     return client.query(query).result().to_dataframe()
 
 
@@ -240,6 +275,8 @@ def save_outputs(
         "best_score": study.best_value,
         "best_params": study.best_params,
         "best_user_attrs": best_user_attrs,
+        "max_rows": args.max_rows,
+        "balanced_smoke_sample": args.balanced_smoke_sample,
         "elapsed_seconds": elapsed_seconds,
     }
     (local_dir / "lightgbm_optuna_best_params.json").write_text(
@@ -305,8 +342,8 @@ def main() -> None:
     with tempfile.TemporaryDirectory() as tmp_dir:
         local_dir = Path(tmp_dir)
         save_outputs(study, local_dir, args, elapsed_seconds)
-        LOGGER.info("Uploading Optuna artifacts to %s", TUNING_ARTIFACTS)
-        upload_directory(local_dir, TUNING_ARTIFACTS)
+        LOGGER.info("Uploading Optuna artifacts to %s", args.output_dir)
+        upload_directory(local_dir, args.output_dir)
 
     LOGGER.info("Best %s: %.6f", args.metric, study.best_value)
     LOGGER.info("Best params: %s", json.dumps(study.best_params, sort_keys=True))
