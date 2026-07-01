@@ -133,7 +133,7 @@ models/lightgbm/tuning/
 Compile the Vertex AI pipeline:
 
 ```bash
-python -B gcp/pipeline.py
+python -m gcp.pipeline
 ```
 
 Provision Redis:
