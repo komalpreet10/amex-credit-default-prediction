@@ -4,10 +4,12 @@ End-to-end credit default prediction project using monthly American Express stat
 
 ## Highlights
 
-- Engineered `3,418` customer-level behavioral, temporal, and statistical features from monthly statement records.
-- Compared LightGBM and XGBoost with cross-validation on `229,456` customer-level rows.
-- Built a GCP-native MLOps workflow using Dataproc Serverless, BigQuery, Vertex AI Pipelines, Vertex AI Custom Training, GCS, and Vertex AI Endpoints.
-- Added feature selection, SHAP explainability, MLflow/Vertex experiment tracking, PSI drift monitoring, and Redis-backed online inference scaffolding.
+- Designed and deployed an end-to-end credit default prediction pipeline on GCP, orchestrating distributed feature engineering, hyperparameter tuning, model training, and real-time inference across monthly statement cycles.
+- Engineered 22+ behavioral, temporal, and statistical aggregations across delinquency, spend, payment, balance, and risk variables; optimized a LightGBM model via Optuna with stratified cross-validation, achieving a 0.959 ROC-AUC and 0.894 PR-AUC on imbalanced data.
+- Logged model runs, metrics, and artifacts using MLflow, and implemented SHAP-based model explainability and Population Stability Index (PSI) analysis to interpret model predictions and assess potential feature drift.
+- Built a three-tier real-time inference pipeline using Redis as an online feature store, BigQuery as a fallback lookup, and Vertex AI Endpoint for model serving, with streaming feature updates via Pub/Sub and Dataflow on each statement cycle close.
+
+
 
 ## Results
 
@@ -23,12 +25,6 @@ The Vertex workflow uses Optuna 5-fold stratified cross-validation for tuning an
 ![LightGBM ROC curve](docs/images/lightgbm_roc_curve.png)
 
 ![LightGBM precision recall curve](docs/images/lightgbm_pr_curve.png)
-
-## Explainability
-
-![LightGBM feature importance](docs/images/lightgbm_feature_importance.png)
-
-![LightGBM SHAP summary](docs/images/lightgbm_shap_summary.png)
 
 ## Architecture
 
