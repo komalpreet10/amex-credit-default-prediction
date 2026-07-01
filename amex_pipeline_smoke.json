@@ -13,6 +13,9 @@
           "display_name": {
             "parameterType": "STRING"
           },
+          "eval_table": {
+            "parameterType": "STRING"
+          },
           "final_num_boost_round": {
             "parameterType": "NUMBER_INTEGER"
           },
@@ -87,6 +90,9 @@
           "max_rows": {
             "parameterType": "NUMBER_INTEGER"
           },
+          "metric": {
+            "parameterType": "STRING"
+          },
           "n_splits": {
             "parameterType": "NUMBER_INTEGER"
           },
@@ -143,7 +149,7 @@
             "sh",
             "-ec",
             "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
-            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef run_vertex_training_job(\n    project: str,\n    region: str,\n    training_image: str,\n    table: str,\n    output_dir: str,\n    params_uri: str,\n    display_name: str,\n    shap_sample_size: int,\n    shap_max_display: int,\n    max_rows: int,\n    balanced_smoke_sample: bool,\n    selector_num_boost_round: int,\n    final_num_boost_round: int,\n    min_selected_features: int,\n    max_selected_features: int,\n    disable_shap: bool,\n    replica_count: int,\n    machine_type: str,\n) -> str:\n    from google.cloud import aiplatform\n\n    aiplatform.init(project=project, location=region, staging_bucket=output_dir)\n    job = aiplatform.CustomContainerTrainingJob(\n        display_name=display_name,\n        container_uri=training_image,\n        command=[\"python\", \"gcp/vertex/train.py\"],\n    )\n    job_args = [\n        \"--params-uri\",\n        params_uri,\n        \"--output-dir\",\n        output_dir,\n        \"--selector-num-boost-round\",\n        str(selector_num_boost_round),\n        \"--final-num-boost-round\",\n        str(final_num_boost_round),\n        \"--min-selected-features\",\n        str(min_selected_features),\n        \"--max-selected-features\",\n        str(max_selected_features),\n        \"--shap-sample-size\",\n        str(shap_sample_size),\n        \"--shap-max-display\",\n        str(shap_max_display),\n    ]\n    if max_rows > 0:\n        job_args.extend([\"--max-rows\", str(max_rows)])\n    if balanced_smoke_sample:\n        job_args.append(\"--balanced-smoke-sample\")\n    if disable_shap:\n        job_args.append(\"--disable-shap\")\n    model = job.run(\n        args=job_args,\n        replica_count=replica_count,\n        machine_type=machine_type,\n        sync=True,\n    )\n    return model.resource_name if model else output_dir\n\n"
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef run_vertex_training_job(\n    project: str,\n    region: str,\n    training_image: str,\n    table: str,\n    eval_table: str,\n    output_dir: str,\n    params_uri: str,\n    display_name: str,\n    shap_sample_size: int,\n    shap_max_display: int,\n    max_rows: int,\n    balanced_smoke_sample: bool,\n    selector_num_boost_round: int,\n    final_num_boost_round: int,\n    min_selected_features: int,\n    max_selected_features: int,\n    disable_shap: bool,\n    replica_count: int,\n    machine_type: str,\n) -> str:\n    from google.cloud import aiplatform\n\n    aiplatform.init(project=project, location=region, staging_bucket=output_dir)\n    job = aiplatform.CustomContainerTrainingJob(\n        display_name=display_name,\n        container_uri=training_image,\n        command=[\"python\", \"gcp/vertex/train.py\"],\n    )\n    job_args = [\n        \"--table\",\n        table,\n        \"--eval-table\",\n        eval_table,\n        \"--params-uri\",\n        params_uri,\n        \"--output-dir\",\n        output_dir,\n        \"--selector-num-boost-round\",\n        str(selector_num_boost_round),\n        \"--final-num-boost-round\",\n        str(final_num_boost_round),\n        \"--min-selected-features\",\n        str(min_selected_features),\n        \"--max-selected-features\",\n        str(max_selected_features),\n        \"--shap-sample-size\",\n        str(shap_sample_size),\n        \"--shap-max-display\",\n        str(shap_max_display),\n    ]\n    if max_rows > 0:\n        job_args.extend([\"--max-rows\", str(max_rows)])\n    if balanced_smoke_sample:\n        job_args.append(\"--balanced-smoke-sample\")\n    if disable_shap:\n        job_args.append(\"--disable-shap\")\n    model = job.run(\n        args=job_args,\n        replica_count=replica_count,\n        machine_type=machine_type,\n        sync=True,\n    )\n    return model.resource_name if model else output_dir\n\n"
           ],
           "image": "python:3.11"
         }
@@ -163,7 +169,7 @@
             "sh",
             "-ec",
             "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
-            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef run_vertex_tuning_job(\n    project: str,\n    region: str,\n    training_image: str,\n    table: str,\n    output_dir: str,\n    display_name: str,\n    n_trials: int,\n    n_splits: int,\n    num_boost_round: int,\n    early_stopping_rounds: int,\n    max_rows: int,\n    balanced_smoke_sample: bool,\n    replica_count: int,\n    machine_type: str,\n) -> str:\n    from google.cloud import aiplatform\n\n    aiplatform.init(project=project, location=region, staging_bucket=output_dir)\n    job = aiplatform.CustomContainerTrainingJob(\n        display_name=display_name,\n        container_uri=training_image,\n        command=[\"python\", \"gcp/vertex/tune_lightgbm_optuna.py\"],\n    )\n    job_args = [\n        \"--n-trials\",\n        str(n_trials),\n        \"--n-splits\",\n        str(n_splits),\n        \"--num-boost-round\",\n        str(num_boost_round),\n        \"--early-stopping-rounds\",\n        str(early_stopping_rounds),\n        \"--output-dir\",\n        output_dir,\n    ]\n    if max_rows > 0:\n        job_args.extend([\"--max-rows\", str(max_rows)])\n    if balanced_smoke_sample:\n        job_args.append(\"--balanced-smoke-sample\")\n    job.run(\n        args=job_args,\n        replica_count=replica_count,\n        machine_type=machine_type,\n        sync=True,\n    )\n    return f\"{output_dir.rstrip('/')}/lightgbm_optuna_best_params.json\"\n\n"
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef run_vertex_tuning_job(\n    project: str,\n    region: str,\n    training_image: str,\n    table: str,\n    output_dir: str,\n    display_name: str,\n    metric: str,\n    n_trials: int,\n    n_splits: int,\n    num_boost_round: int,\n    early_stopping_rounds: int,\n    max_rows: int,\n    balanced_smoke_sample: bool,\n    replica_count: int,\n    machine_type: str,\n) -> str:\n    from google.cloud import aiplatform\n\n    aiplatform.init(project=project, location=region, staging_bucket=output_dir)\n    job = aiplatform.CustomContainerTrainingJob(\n        display_name=display_name,\n        container_uri=training_image,\n        command=[\"python\", \"gcp/vertex/tune_lightgbm_optuna.py\"],\n    )\n    job_args = [\n        \"--table\",\n        table,\n        \"--metric\",\n        metric,\n        \"--n-trials\",\n        str(n_trials),\n        \"--n-splits\",\n        str(n_splits),\n        \"--num-boost-round\",\n        str(num_boost_round),\n        \"--early-stopping-rounds\",\n        str(early_stopping_rounds),\n        \"--output-dir\",\n        output_dir,\n    ]\n    if max_rows > 0:\n        job_args.extend([\"--max-rows\", str(max_rows)])\n    if balanced_smoke_sample:\n        job_args.append(\"--balanced-smoke-sample\")\n    job.run(\n        args=job_args,\n        replica_count=replica_count,\n        machine_type=machine_type,\n        sync=True,\n    )\n    return f\"{output_dir.rstrip('/')}/lightgbm_optuna_best_params.json\"\n\n"
           ],
           "image": "python:3.11"
         }
@@ -201,6 +207,11 @@
               "display_name": {
                 "runtimeValue": {
                   "constant": "amex-lightgbm-training-smoke-test"
+                }
+              },
+              "eval_table": {
+                "runtimeValue": {
+                  "constant": ""
                 }
               },
               "final_num_boost_round": {
@@ -306,6 +317,11 @@
               },
               "max_rows": {
                 "componentInputParameter": "max_rows"
+              },
+              "metric": {
+                "runtimeValue": {
+                  "constant": "pr_auc"
+                }
               },
               "n_splits": {
                 "runtimeValue": {

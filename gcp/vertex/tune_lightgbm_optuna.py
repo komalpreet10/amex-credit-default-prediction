@@ -8,17 +8,18 @@ import time
 from pathlib import Path
 
 import lightgbm as lgb
+import matplotlib
 import numpy as np
 import optuna
 import pandas as pd
 from google.cloud import bigquery, storage
 from sklearn.metrics import (
     average_precision_score,
-    classification_report,
-    confusion_matrix,
     f1_score,
+    precision_recall_curve,
     precision_score,
     recall_score,
+    roc_curve,
     roc_auc_score,
 )
 from sklearn.model_selection import StratifiedKFold
@@ -27,6 +28,7 @@ from amex_default.config import ID_COL, RANDOM_STATE, TARGET_COL
 from gcp.config import BQ_LOCATION, FEATURE_TABLE, PROJECT_ID, TUNING_ARTIFACTS
 
 LOGGER = logging.getLogger(__name__)
+matplotlib.use("Agg")
 
 BASE_PARAMS = {
     "objective": "binary",
@@ -44,6 +46,7 @@ BASE_PARAMS = {
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--study-name", default="lightgbm-optuna")
+    parser.add_argument("--table", default=FEATURE_TABLE)
     parser.add_argument("--output-dir", default=TUNING_ARTIFACTS)
     parser.add_argument("--max-rows", type=int, default=None)
     parser.add_argument("--balanced-smoke-sample", action="store_true")
@@ -59,8 +62,8 @@ def parse_args() -> argparse.Namespace:
 def read_training_data(args: argparse.Namespace) -> pd.DataFrame:
     client = bigquery.Client(project=PROJECT_ID, location=BQ_LOCATION)
     if args.max_rows is None:
-        query = f"SELECT * FROM `{FEATURE_TABLE}`"
-        LOGGER.info("Reading tuning data from BigQuery table %s", FEATURE_TABLE)
+        query = f"SELECT * FROM `{args.table}`"
+        LOGGER.info("Reading tuning data from BigQuery table %s", args.table)
         return client.query(query).result().to_dataframe()
 
     if args.balanced_smoke_sample:
@@ -68,29 +71,29 @@ def read_training_data(args: argparse.Namespace) -> pd.DataFrame:
         negative_rows = args.max_rows - positive_rows
         query = f"""
         (
-          SELECT * FROM `{FEATURE_TABLE}`
+          SELECT * FROM `{args.table}`
           WHERE {TARGET_COL} = 1
           LIMIT {positive_rows}
         )
         UNION ALL
         (
-          SELECT * FROM `{FEATURE_TABLE}`
+          SELECT * FROM `{args.table}`
           WHERE {TARGET_COL} = 0
           LIMIT {negative_rows}
         )
         """
         LOGGER.info(
             "Reading balanced tuning smoke sample from %s: %d positive rows, %d negative rows",
-            FEATURE_TABLE,
+            args.table,
             positive_rows,
             negative_rows,
         )
         return client.query(query).result().to_dataframe()
 
-    query = f"SELECT * FROM `{FEATURE_TABLE}` LIMIT {args.max_rows}"
+    query = f"SELECT * FROM `{args.table}` LIMIT {args.max_rows}"
     LOGGER.info(
         "Reading tuning smoke sample from %s: max_rows=%d",
-        FEATURE_TABLE,
+        args.table,
         args.max_rows,
     )
     return client.query(query).result().to_dataframe()
@@ -159,8 +162,6 @@ def build_objective(
         fold_scores = []
         fold_metrics = []
         best_iterations = []
-        oof_true = []
-        oof_pred = []
 
         for fold, (train_idx, valid_idx) in enumerate(cv.split(X, y), start=1):
             X_train, X_valid = X.iloc[train_idx], X.iloc[valid_idx]
@@ -193,24 +194,13 @@ def build_objective(
             pred_label = (pred >= 0.5).astype(int)
             metrics = compute_fold_metrics(y_valid, pred, pred_label)
             score = metrics[args.metric]
-            tn, fp, fn, tp = confusion_matrix(
-                y_valid,
-                pred_label,
-                labels=[0, 1],
-            ).ravel()
             best_iteration = int(model.best_iteration or model.current_iteration())
             fold_scores.append(score)
             best_iterations.append(best_iteration)
-            oof_true.extend(y_valid.tolist())
-            oof_pred.extend(pred_label.tolist())
             fold_metrics.append(
                 {
                     "fold": fold,
                     **metrics,
-                    "true_negative": int(tn),
-                    "false_positive": int(fp),
-                    "false_negative": int(fn),
-                    "true_positive": int(tp),
                     "best_iteration": best_iteration,
                 }
             )
@@ -226,25 +216,122 @@ def build_objective(
                 f"mean_{metric_name}",
                 float(np.mean([fold[metric_name] for fold in fold_metrics])),
             )
-        trial.set_user_attr(
-            "confusion_matrix",
-            confusion_matrix(oof_true, oof_pred, labels=[0, 1]).tolist(),
-        )
-        trial.set_user_attr(
-            "classification_report",
-            classification_report(
-                oof_true,
-                oof_pred,
-                labels=[0, 1],
-                output_dict=True,
-                zero_division=0,
-            ),
-        )
         trial.set_user_attr("best_iterations", best_iterations)
         trial.set_user_attr("mean_best_iteration", float(np.mean(best_iterations)))
         return float(np.mean(fold_scores))
 
     return objective
+
+
+def plot_roc_curve(y_true: list[int], y_score: list[float], path: Path) -> None:
+    import matplotlib.pyplot as plt
+
+    fpr, tpr, _ = roc_curve(y_true, y_score)
+    auc = roc_auc_score(y_true, y_score)
+    fig, ax = plt.subplots(figsize=(7, 5))
+    ax.plot(fpr, tpr, label=f"ROC-AUC = {auc:.4f}")
+    ax.plot([0, 1], [0, 1], linestyle="--", color="gray", linewidth=1)
+    ax.set_xlabel("False Positive Rate")
+    ax.set_ylabel("True Positive Rate")
+    ax.set_title("Cross-Validated ROC Curve")
+    ax.legend(loc="lower right")
+    fig.tight_layout()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(path, dpi=160)
+    plt.close(fig)
+
+
+def plot_pr_curve(y_true: list[int], y_score: list[float], path: Path) -> None:
+    import matplotlib.pyplot as plt
+
+    precision, recall, _ = precision_recall_curve(y_true, y_score)
+    auc = average_precision_score(y_true, y_score)
+    fig, ax = plt.subplots(figsize=(7, 5))
+    ax.plot(recall, precision, label=f"PR-AUC = {auc:.4f}")
+    ax.set_xlabel("Recall")
+    ax.set_ylabel("Precision")
+    ax.set_title("Cross-Validated Precision-Recall Curve")
+    ax.legend(loc="upper right")
+    fig.tight_layout()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(path, dpi=160)
+    plt.close(fig)
+
+
+def evaluate_best_params(
+    X: pd.DataFrame,
+    y: pd.Series,
+    best_params: dict[str, object],
+    args: argparse.Namespace,
+) -> dict[str, object]:
+    categorical_features = X.select_dtypes(include=["category"]).columns.tolist()
+    cv = StratifiedKFold(
+        n_splits=args.n_splits,
+        shuffle=True,
+        random_state=RANDOM_STATE,
+    )
+    params = {**BASE_PARAMS, **best_params}
+    fold_metrics = []
+    best_iterations = []
+    oof_true: list[int] = []
+    oof_score: list[float] = []
+
+    for fold, (train_idx, valid_idx) in enumerate(cv.split(X, y), start=1):
+        X_train, X_valid = X.iloc[train_idx], X.iloc[valid_idx]
+        y_train, y_valid = y.iloc[train_idx], y.iloc[valid_idx]
+        train_data = lgb.Dataset(
+            X_train,
+            label=y_train,
+            categorical_feature=categorical_features,
+            free_raw_data=False,
+        )
+        valid_data = lgb.Dataset(
+            X_valid,
+            label=y_valid,
+            categorical_feature=categorical_features,
+            reference=train_data,
+            free_raw_data=False,
+        )
+        model = lgb.train(
+            params,
+            train_data,
+            num_boost_round=args.num_boost_round,
+            valid_sets=[valid_data],
+            valid_names=["valid"],
+            callbacks=[
+                lgb.early_stopping(args.early_stopping_rounds, verbose=False),
+                lgb.log_evaluation(0),
+            ],
+        )
+        pred = model.predict(X_valid, num_iteration=model.best_iteration)
+        pred_label = (pred >= 0.5).astype(int)
+        best_iteration = int(model.best_iteration or model.current_iteration())
+        fold_metrics.append(
+            {
+                "fold": fold,
+                **compute_fold_metrics(y_valid, pred, pred_label),
+                "best_iteration": best_iteration,
+            }
+        )
+        best_iterations.append(best_iteration)
+        oof_true.extend(y_valid.astype(int).tolist())
+        oof_score.extend([float(value) for value in pred])
+
+    return {
+        "evaluation_source": "best_params_stratified_cross_validation",
+        "fold_metrics": fold_metrics,
+        "mean_roc_auc": float(np.mean([fold["roc_auc"] for fold in fold_metrics])),
+        "mean_pr_auc": float(np.mean([fold["pr_auc"] for fold in fold_metrics])),
+        "mean_precision": float(np.mean([fold["precision"] for fold in fold_metrics])),
+        "mean_recall": float(np.mean([fold["recall"] for fold in fold_metrics])),
+        "mean_f1": float(np.mean([fold["f1"] for fold in fold_metrics])),
+        "best_iterations": best_iterations,
+        "mean_best_iteration": float(np.mean(best_iterations)),
+        "oof_roc_auc": float(roc_auc_score(oof_true, oof_score)),
+        "oof_pr_auc": float(average_precision_score(oof_true, oof_score)),
+        "oof_true": oof_true,
+        "oof_score": oof_score,
+    }
 
 
 def upload_directory(local_dir: Path, gcs_dir: str) -> None:
@@ -265,8 +352,14 @@ def save_outputs(
     local_dir: Path,
     args: argparse.Namespace,
     elapsed_seconds: float,
+    cv_evaluation: dict[str, object],
 ) -> None:
-    best_user_attrs = study.best_trial.user_attrs
+    cv_summary = {
+        key: value
+        for key, value in cv_evaluation.items()
+        if key not in {"oof_true", "oof_score"}
+    }
+    best_user_attrs = {**study.best_trial.user_attrs, **cv_summary}
     best = {
         "study_name": study.study_name,
         "metric": args.metric,
@@ -294,26 +387,21 @@ def save_outputs(
         "n_splits": args.n_splits,
         "n_trials": len(study.trials),
         "best_trial_number": study.best_trial.number,
-        "fold_metrics": best_user_attrs.get("fold_metrics", []),
-        "mean_roc_auc": best_user_attrs.get("mean_roc_auc"),
-        "mean_pr_auc": best_user_attrs.get("mean_pr_auc"),
-        "mean_precision": best_user_attrs.get("mean_precision"),
-        "mean_recall": best_user_attrs.get("mean_recall"),
-        "mean_f1": best_user_attrs.get("mean_f1"),
-        "confusion_matrix": best_user_attrs.get("confusion_matrix", {}),
-        "classification_report": best_user_attrs.get("classification_report", {}),
+        **cv_summary,
     }
     (local_dir / "cv_metrics.json").write_text(
         json.dumps(cv_metrics, indent=2),
         encoding="utf-8",
     )
-    (local_dir / "cv_classification_report.json").write_text(
-        json.dumps(best_user_attrs.get("classification_report", {}), indent=2),
-        encoding="utf-8",
+    plot_roc_curve(
+        cv_evaluation["oof_true"],
+        cv_evaluation["oof_score"],
+        local_dir / "plots" / "cv_roc_curve.png",
     )
-    (local_dir / "cv_confusion_matrix.json").write_text(
-        json.dumps(best_user_attrs.get("confusion_matrix", {}), indent=2),
-        encoding="utf-8",
+    plot_pr_curve(
+        cv_evaluation["oof_true"],
+        cv_evaluation["oof_score"],
+        local_dir / "plots" / "cv_pr_curve.png",
     )
 
 
@@ -338,10 +426,11 @@ def main() -> None:
         show_progress_bar=True,
     )
     elapsed_seconds = time.perf_counter() - start
+    cv_evaluation = evaluate_best_params(X, y, study.best_params, args)
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         local_dir = Path(tmp_dir)
-        save_outputs(study, local_dir, args, elapsed_seconds)
+        save_outputs(study, local_dir, args, elapsed_seconds, cv_evaluation)
         LOGGER.info("Uploading Optuna artifacts to %s", args.output_dir)
         upload_directory(local_dir, args.output_dir)
 

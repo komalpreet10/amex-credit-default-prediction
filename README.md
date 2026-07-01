@@ -103,6 +103,8 @@ Project:          amex-credit-risk-ml
 Region:           us-central1
 Bucket:           gs://amex-credit-risk-ml-data/
 Feature table:    amex-credit-risk-ml.amex_ml.train_features
+Train split:      amex-credit-risk-ml.amex_ml.train_features_train
+Test split:       amex-credit-risk-ml.amex_ml.train_features_test
 Model artifacts:  gs://amex-credit-risk-ml-data/models/lightgbm/
 Tuning artifacts: gs://amex-credit-risk-ml-data/models/lightgbm/tuning/
 Endpoint:         amex-credit-default-endpoint
@@ -118,14 +120,16 @@ models/lightgbm/
   selected_feature_list.json
   full_feature_list.json
   feature_importance.csv
-  plots/
+  plots/test_roc_curve.png
+  plots/test_pr_curve.png
   mlruns/
 
 models/lightgbm/tuning/
   lightgbm_optuna_best_params.json
   lightgbm_optuna_trials.csv
   cv_metrics.json
-  cv_classification_report.json
+  plots/cv_roc_curve.png
+  plots/cv_pr_curve.png
 ```
 
 ## Run

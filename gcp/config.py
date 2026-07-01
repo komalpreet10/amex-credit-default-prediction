@@ -18,6 +18,8 @@ SERVING_IMAGE = os.getenv("SERVING_IMAGE_URI", "")
 EXPERIMENT = "amex-credit-default"
 DATASET = "amex_ml"
 FEATURE_TABLE_ID = "train_features"
+TRAIN_FEATURE_TABLE_ID = "train_features_train"
+TEST_FEATURE_TABLE_ID = "train_features_test"
 DRIFT_TABLE_ID = "drift_metrics"
 MODEL_DISPLAY_NAME = "amex-lightgbm-credit-default"
 ENDPOINT_DISPLAY_NAME = "amex-credit-default-endpoint"
@@ -69,6 +71,8 @@ FEATURES = f"gs://{BUCKET}/processed/v1/train_features/"
 FEATURES_PARQUET_URI = f"{FEATURES}*.parquet"
 
 FEATURE_TABLE = f"{PROJECT_ID}.{DATASET}.{FEATURE_TABLE_ID}"
+TRAIN_FEATURE_TABLE = f"{PROJECT_ID}.{DATASET}.{TRAIN_FEATURE_TABLE_ID}"
+TEST_FEATURE_TABLE = f"{PROJECT_ID}.{DATASET}.{TEST_FEATURE_TABLE_ID}"
 DRIFT_TABLE = f"{PROJECT_ID}.{DATASET}.{DRIFT_TABLE_ID}"
 
 # Model, tuning, monitoring, and deployment artifacts.
