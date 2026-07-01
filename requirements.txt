@@ -21,5 +21,7 @@ db-dtypes
 google-cloud-aiplatform
 google-cloud-storage
 google-cloud-dataproc
+google-cloud-pubsub
+google-cloud-monitoring
 google-cloud-pipeline-components
 kfp

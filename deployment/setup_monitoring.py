@@ -9,22 +9,23 @@ from datetime import timedelta
 from google.cloud import aiplatform_v1, storage
 from google.protobuf.duration_pb2 import Duration
 
-CONFIG_URI = "gs://amex-credit-risk-ml-data/config/deployment_config.json"
-DRIFT_THRESHOLDS = {
-    "P_2_mean": 0.3,
-    "B_1_mean": 0.3,
-    "D_39_last": 0.3,
-    "S_3_mean": 0.3,
-    "B_1_last": 0.3,
-}
+from gcp.config import (
+    DEPLOYMENT_CONFIG_URI,
+    MONITORING_DISPLAY_NAME,
+    MONITORING_DRIFT_THRESHOLDS,
+    MONITORING_INTERVAL_HOURS,
+    MONITORING_SAMPLE_RATE,
+    PROJECT_ID,
+    REGION,
+)
 
 LOGGER = logging.getLogger(__name__)
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--project", default="amex-credit-risk-ml")
-    parser.add_argument("--location", default="us-central1")
+    parser.add_argument("--project", default=PROJECT_ID)
+    parser.add_argument("--location", default=REGION)
     return parser.parse_args()
 
 
@@ -46,7 +47,7 @@ def main() -> None:
     if not alert_email:
         raise RuntimeError("ALERT_EMAIL environment variable is required.")
 
-    config = read_gcs_json(CONFIG_URI)
+    config = read_gcs_json(DEPLOYMENT_CONFIG_URI)
     endpoint = config["endpoint_resource_name"]
     parent = f"projects/{args.project}/locations/{args.location}"
     client = aiplatform_v1.JobServiceClient(
@@ -55,19 +56,23 @@ def main() -> None:
 
     thresholds = {
         feature: aiplatform_v1.ThresholdConfig(value=value)
-        for feature, value in DRIFT_THRESHOLDS.items()
+        for feature, value in MONITORING_DRIFT_THRESHOLDS.items()
     }
     job = aiplatform_v1.ModelDeploymentMonitoringJob(
-        display_name="amex-credit-default-monitoring",
+        display_name=MONITORING_DISPLAY_NAME,
         endpoint=endpoint,
         logging_sampling_strategy=aiplatform_v1.SamplingStrategy(
             random_sample_config=aiplatform_v1.SamplingStrategy.RandomSampleConfig(
-                sample_rate=1.0
+                sample_rate=MONITORING_SAMPLE_RATE
             )
         ),
         model_deployment_monitoring_schedule_config=(
             aiplatform_v1.ModelDeploymentMonitoringScheduleConfig(
-                monitor_interval=Duration(seconds=int(timedelta(hours=1).total_seconds()))
+                monitor_interval=Duration(
+                    seconds=int(
+                        timedelta(hours=MONITORING_INTERVAL_HOURS).total_seconds()
+                    )
+                )
             )
         ),
         model_monitoring_alert_config=aiplatform_v1.ModelMonitoringAlertConfig(

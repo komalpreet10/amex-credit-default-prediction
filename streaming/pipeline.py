@@ -11,23 +11,31 @@ import redis
 from apache_beam.options.pipeline_options import PipelineOptions, StandardOptions
 from google.cloud import pubsub_v1, storage
 
-TTL_SECONDS = 2_592_000
-DEFAULT_SUBSCRIPTION = (
-    "projects/amex-credit-risk-ml/subscriptions/statement-cycle-close-sub"
+from amex_default.redis_config import redis_ssl_ca_certs
+from gcp.config import (
+    PROJECT_ID,
+    REDIS_FEATURE_TTL_SECONDS,
+    REDIS_PORT,
+    REDIS_SSL_ENABLED,
+    REDIS_NETWORK,
+    REGION,
+    STATEMENT_DLQ_TOPIC,
+    STATEMENT_SUBSCRIPTION_PATH,
+    STREAMING_FEATURES_URI,
 )
-DEFAULT_FEATURE_CONFIG = "gs://amex-credit-risk-ml-data/config/streaming_features.json"
-DLQ_TOPIC = "statement-cycle-close-dlq"
 
 LOGGER = logging.getLogger(__name__)
 
 
 def parse_args() -> tuple[argparse.Namespace, list[str]]:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--project", default="amex-credit-risk-ml")
-    parser.add_argument("--region", default="us-central1")
+    parser.add_argument("--project", default=PROJECT_ID)
+    parser.add_argument("--region", default=REGION)
     parser.add_argument("--redis-host", required=True)
-    parser.add_argument("--streaming-features-uri", default=DEFAULT_FEATURE_CONFIG)
-    parser.add_argument("--subscription", default=DEFAULT_SUBSCRIPTION)
+    parser.add_argument("--streaming-features-uri", default=STREAMING_FEATURES_URI)
+    parser.add_argument("--subscription", default=STATEMENT_SUBSCRIPTION_PATH)
+    parser.add_argument("--network", default=REDIS_NETWORK)
+    parser.add_argument("--subnetwork", default=None)
     return parser.parse_known_args()
 
 
@@ -79,16 +87,22 @@ class UpdateRedisFeatures(beam.DoFn):
     def setup(self) -> None:
         self.redis_client = redis.Redis(
             host=self.redis_host,
-            port=6379,
+            port=REDIS_PORT,
             decode_responses=True,
             socket_timeout=10,
+            ssl=REDIS_SSL_ENABLED,
+            ssl_ca_certs=redis_ssl_ca_certs(),
         )
         self.redis_client.ping()
         self.feature_config = read_gcs_json(self.streaming_features_uri)
         self.publisher = pubsub_v1.PublisherClient()
-        self.dlq_topic_path = self.publisher.topic_path(self.project, DLQ_TOPIC)
+        self.dlq_topic_path = self.publisher.topic_path(
+            self.project, STATEMENT_DLQ_TOPIC
+        )
 
-    def publish_dlq(self, raw_message: bytes, customer_id: str | None, error: Exception) -> None:
+    def publish_dlq(
+        self, raw_message: bytes, customer_id: str | None, error: Exception
+    ) -> None:
         if self.publisher is None or self.dlq_topic_path is None:
             raise RuntimeError("DLQ publisher is not initialized.")
         self.publisher.publish(
@@ -120,7 +134,7 @@ class UpdateRedisFeatures(beam.DoFn):
                 )
                 self.redis_client.setex(
                     key,
-                    TTL_SECONDS,
+                    REDIS_FEATURE_TTL_SECONDS,
                     json.dumps(feature_vector, separators=(",", ":")),
                 )
                 yield {
@@ -137,7 +151,7 @@ class UpdateRedisFeatures(beam.DoFn):
                 if attempt == 3:
                     self.publish_dlq(message, customer_id, exc)
                     return
-                time.sleep(2 ** attempt)
+                time.sleep(2**attempt)
 
 
 def main() -> None:
@@ -151,14 +165,15 @@ def main() -> None:
         streaming=True,
         save_main_session=True,
         experiments=["enable_streaming_engine"],
+        network=args.network,
+        subnetwork=args.subnetwork,
     )
     options.view_as(StandardOptions).streaming = True
 
     with beam.Pipeline(options=options) as pipeline:
         (
             pipeline
-            | "Read PubSub"
-            >> beam.io.ReadFromPubSub(subscription=args.subscription)
+            | "Read PubSub" >> beam.io.ReadFromPubSub(subscription=args.subscription)
             | "Update Redis Features"
             >> beam.ParDo(
                 UpdateRedisFeatures(

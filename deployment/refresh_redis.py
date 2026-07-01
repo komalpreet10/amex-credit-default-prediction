@@ -10,21 +10,24 @@ from typing import Any
 import redis
 from google.cloud import bigquery, storage
 
-DEFAULT_BQ_TABLE = "amex-credit-risk-ml.amex_ml.train_features"
-DEFAULT_FEATURES_URI = (
-    "gs://amex-credit-risk-ml-data/models/lightgbm/selected_feature_list.json"
+from amex_default.config import ID_COL
+from amex_default.redis_config import redis_ssl_ca_certs
+from gcp.config import (
+    FEATURE_TABLE,
+    REDIS_FEATURE_TTL_SECONDS,
+    REDIS_PORT,
+    REDIS_SSL_ENABLED,
+    SELECTED_FEATURES_URI,
 )
-TTL_SECONDS = 2_592_000
-ID_COL = "customer_ID"
 
 LOGGER = logging.getLogger(__name__)
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--bq-table", default=DEFAULT_BQ_TABLE)
-    parser.add_argument("--features-uri", default=DEFAULT_FEATURES_URI)
-    parser.add_argument("--redis-port", type=int, default=6379)
+    parser.add_argument("--bq-table", default=FEATURE_TABLE)
+    parser.add_argument("--features-uri", default=SELECTED_FEATURES_URI)
+    parser.add_argument("--redis-port", type=int, default=REDIS_PORT)
     parser.add_argument("--batch-size", type=int, default=1000)
     return parser.parse_args()
 
@@ -86,10 +89,14 @@ def main() -> None:
         port=args.redis_port,
         decode_responses=True,
         socket_timeout=10,
+        ssl=REDIS_SSL_ENABLED,
+        ssl_ca_certs=redis_ssl_ca_certs(),
     )
     redis_client.ping()
 
-    LOGGER.info("Reading %d selected features from %s", len(selected_features), args.bq_table)
+    LOGGER.info(
+        "Reading %d selected features from %s", len(selected_features), args.bq_table
+    )
     rows = bq_client.query(query).result(page_size=args.batch_size)
 
     pipe = redis_client.pipeline(transaction=False)
@@ -100,7 +107,7 @@ def main() -> None:
         customer_id = record.pop(ID_COL)
         key = f"features:{customer_id}"
         payload = json.dumps(record, default=json_default, separators=(",", ":"))
-        pipe.setex(key, TTL_SECONDS, payload)
+        pipe.setex(key, REDIS_FEATURE_TTL_SECONDS, payload)
         pending += 1
         total += 1
 

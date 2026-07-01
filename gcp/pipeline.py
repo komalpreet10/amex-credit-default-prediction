@@ -1,43 +1,38 @@
 from kfp import compiler, dsl
 
-try:
-    from gcp.config import (
-        BQ_LOCATION,
-        ENDPOINT_DISPLAY_NAME,
-        FEATURE_TABLE,
-        FEATURES,
-        MODEL_ARTIFACTS,
-        MODEL_DISPLAY_NAME,
-        PIPELINE_ROOT,
-        PREPROCESSED,
-        PROJECT_ID,
-        RAW_DATA,
-        RAW_LABELS,
-        REGION,
-        SERVING_IMAGE,
-        TRAINING_IMAGE,
-        TUNED_PARAMS_URI,
-        TUNING_ARTIFACTS,
-    )
-except ModuleNotFoundError:
-    from config import (
-        BQ_LOCATION,
-        ENDPOINT_DISPLAY_NAME,
-        FEATURE_TABLE,
-        FEATURES,
-        MODEL_ARTIFACTS,
-        MODEL_DISPLAY_NAME,
-        PIPELINE_ROOT,
-        PREPROCESSED,
-        PROJECT_ID,
-        RAW_DATA,
-        RAW_LABELS,
-        REGION,
-        SERVING_IMAGE,
-        TRAINING_IMAGE,
-        TUNED_PARAMS_URI,
-        TUNING_ARTIFACTS,
-    )
+from gcp.config import (
+    BQ_LOCATION,
+    DEPLOYED_MODEL_DISPLAY_NAME,
+    ENDPOINT_DISPLAY_NAME,
+    ENDPOINT_MACHINE_TYPE,
+    ENDPOINT_MAX_REPLICA_COUNT,
+    ENDPOINT_MIN_REPLICA_COUNT,
+    ENDPOINT_TRAFFIC_PERCENTAGE,
+    FEATURE_TABLE,
+    FEATURES,
+    MODEL_ARTIFACTS,
+    MODEL_DISPLAY_NAME,
+    PIPELINE_ROOT,
+    PREPROCESSED,
+    PROJECT_ID,
+    RAW_DATA,
+    RAW_LABELS,
+    REGION,
+    SERVING_IMAGE,
+    TRAINING_JOB_DISPLAY_NAME,
+    TRAINING_MACHINE_TYPE,
+    TRAINING_REPLICA_COUNT,
+    TRAINING_SHAP_MAX_DISPLAY,
+    TRAINING_SHAP_SAMPLE_SIZE,
+    TRAINING_IMAGE,
+    TUNING_JOB_DISPLAY_NAME,
+    TUNING_MACHINE_TYPE,
+    TUNED_PARAMS_URI,
+    TUNING_N_SPLITS,
+    TUNING_N_TRIALS,
+    TUNING_REPLICA_COUNT,
+    TUNING_ARTIFACTS,
+)
 
 
 @dsl.component(
@@ -137,19 +132,19 @@ def run_vertex_tuning_job(
 
     aiplatform.init(project=project, location=region, staging_bucket=output_dir)
     job = aiplatform.CustomContainerTrainingJob(
-        display_name="amex-lightgbm-optuna-tuning",
+        display_name=TUNING_JOB_DISPLAY_NAME,
         container_uri=training_image,
         command=["python", "gcp/vertex/tune_lightgbm_optuna.py"],
     )
     job.run(
         args=[
             "--n-trials",
-            "15",
+            str(TUNING_N_TRIALS),
             "--n-splits",
-            "5",
+            str(TUNING_N_SPLITS),
         ],
-        replica_count=1,
-        machine_type="n2-standard-16",
+        replica_count=TUNING_REPLICA_COUNT,
+        machine_type=TUNING_MACHINE_TYPE,
         sync=True,
     )
     return f"{output_dir.rstrip('/')}/lightgbm_optuna_best_params.json"
@@ -171,7 +166,7 @@ def run_vertex_training_job(
 
     aiplatform.init(project=project, location=region, staging_bucket=output_dir)
     job = aiplatform.CustomContainerTrainingJob(
-        display_name="amex-lightgbm-training",
+        display_name=TRAINING_JOB_DISPLAY_NAME,
         container_uri=training_image,
         command=["python", "gcp/vertex/train.py"],
     )
@@ -180,12 +175,12 @@ def run_vertex_training_job(
             "--params-uri",
             params_uri,
             "--shap-sample-size",
-            "3000",
+            str(TRAINING_SHAP_SAMPLE_SIZE),
             "--shap-max-display",
-            "30",
+            str(TRAINING_SHAP_MAX_DISPLAY),
         ],
-        replica_count=1,
-        machine_type="n2-standard-16",
+        replica_count=TRAINING_REPLICA_COUNT,
+        machine_type=TRAINING_MACHINE_TYPE,
         sync=True,
     )
     return model.resource_name if model else output_dir
@@ -238,14 +233,21 @@ def deploy_model_to_endpoint(
 
     aiplatform.init(project=project, location=region)
     model = aiplatform.Model(model_resource_name)
-    endpoint = aiplatform.Endpoint.create(display_name=endpoint_display_name)
+    endpoints = aiplatform.Endpoint.list(
+        filter=f'display_name="{endpoint_display_name}"',
+        order_by="create_time desc",
+    )
+    if endpoints:
+        endpoint = endpoints[0]
+    else:
+        endpoint = aiplatform.Endpoint.create(display_name=endpoint_display_name)
     model.deploy(
         endpoint=endpoint,
-        deployed_model_display_name="amex-lightgbm",
-        machine_type="n1-standard-2",
-        min_replica_count=1,
-        max_replica_count=1,
-        traffic_percentage=100,
+        deployed_model_display_name=DEPLOYED_MODEL_DISPLAY_NAME,
+        machine_type=ENDPOINT_MACHINE_TYPE,
+        min_replica_count=ENDPOINT_MIN_REPLICA_COUNT,
+        max_replica_count=ENDPOINT_MAX_REPLICA_COUNT,
+        traffic_percentage=ENDPOINT_TRAFFIC_PERCENTAGE,
         sync=True,
     )
     return endpoint.resource_name
@@ -436,7 +438,7 @@ def amex_pipeline(
     #     project=project,
     #     location=bq_location,
     #     baseline_table=feature_table,
-    #     current_table=f"{project}.amex_ml.drift_current_features",
+    #     current_table="PROJECT.DATASET.current_features",
     #     metrics_table=DRIFT_TABLE,
     #     output_uri=DRIFT_REPORT,
     # )
