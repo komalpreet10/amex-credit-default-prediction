@@ -24,12 +24,6 @@ The Vertex workflow uses Optuna 5-fold stratified cross-validation for tuning an
 
 ![LightGBM precision recall curve](docs/images/lightgbm_pr_curve.png)
 
-## Explainability
-
-![LightGBM feature importance](docs/images/lightgbm_feature_importance.png)
-
-![LightGBM SHAP summary](docs/images/lightgbm_shap_summary.png)
-
 ## Architecture
 
 ```text
