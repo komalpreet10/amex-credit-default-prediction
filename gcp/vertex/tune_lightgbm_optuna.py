@@ -12,18 +12,19 @@ import numpy as np
 import optuna
 import pandas as pd
 from google.cloud import bigquery, storage
-from sklearn.metrics import average_precision_score, roc_auc_score
+from sklearn.metrics import (
+    average_precision_score,
+    classification_report,
+    confusion_matrix,
+    f1_score,
+    precision_score,
+    recall_score,
+    roc_auc_score,
+)
 from sklearn.model_selection import StratifiedKFold
 
-PROJECT_ID = "amex-credit-risk-ml"
-LOCATION = "us-central1"
-BQ_LOCATION = "US"
-TABLE = "amex-credit-risk-ml.amex_ml.train_features"
-OUTPUT_DIR = "gs://amex-credit-risk-ml-data/models/lightgbm/tuning/"
-
-ID_COL = "customer_ID"
-TARGET_COL = "target"
-RANDOM_STATE = 42
+from amex_default.config import ID_COL, RANDOM_STATE, TARGET_COL
+from gcp.config import BQ_LOCATION, FEATURE_TABLE, PROJECT_ID, TUNING_ARTIFACTS
 
 LOGGER = logging.getLogger(__name__)
 
@@ -42,15 +43,9 @@ BASE_PARAMS = {
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--project", default=PROJECT_ID)
-    parser.add_argument("--location", default=LOCATION)
-    parser.add_argument("--bq-location", default=BQ_LOCATION)
-    parser.add_argument("--table", default=TABLE)
-    parser.add_argument("--output-dir", default=OUTPUT_DIR)
     parser.add_argument("--study-name", default="lightgbm-optuna")
     parser.add_argument("--n-trials", type=int, default=25)
     parser.add_argument("--n-splits", type=int, default=3)
-    parser.add_argument("--max-rows", type=int, default=100000)
     parser.add_argument("--num-boost-round", type=int, default=700)
     parser.add_argument("--early-stopping-rounds", type=int, default=50)
     parser.add_argument("--metric", choices=["roc_auc", "pr_auc"], default="roc_auc")
@@ -59,12 +54,10 @@ def parse_args() -> argparse.Namespace:
 
 
 def read_training_data(args: argparse.Namespace) -> pd.DataFrame:
-    client = bigquery.Client(project=args.project, location=args.bq_location)
-    query = f"SELECT * FROM `{args.table}`"
-    if args.max_rows:
-        query += f" LIMIT {args.max_rows}"
+    client = bigquery.Client(project=PROJECT_ID, location=BQ_LOCATION)
+    query = f"SELECT * FROM `{FEATURE_TABLE}`"
 
-    LOGGER.info("Reading tuning data from BigQuery table %s", args.table)
+    LOGGER.info("Reading tuning data from BigQuery table %s", FEATURE_TABLE)
     return client.query(query).result().to_dataframe()
 
 
@@ -83,23 +76,35 @@ def split_features_target(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:
 
 def suggest_params(trial: optuna.Trial) -> dict[str, object]:
     return {
-        "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.12, log=True),
+        "learning_rate": trial.suggest_float("learning_rate", 0.005, 0.3, log=True),
         "num_leaves": trial.suggest_int("num_leaves", 24, 256),
         "max_depth": trial.suggest_int("max_depth", 3, 12),
-        "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 50, 500),
+        "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 50, 2000),
+        "min_child_weight": trial.suggest_float(
+            "min_child_weight", 1e-3, 10.0, log=True
+        ),
         "feature_fraction": trial.suggest_float("feature_fraction", 0.55, 1.0),
         "bagging_fraction": trial.suggest_float("bagging_fraction", 0.55, 1.0),
         "bagging_freq": trial.suggest_int("bagging_freq", 1, 10),
-        "lambda_l1": trial.suggest_float("lambda_l1", 1e-4, 10.0, log=True),
-        "lambda_l2": trial.suggest_float("lambda_l2", 1e-4, 10.0, log=True),
-        "min_gain_to_split": trial.suggest_float("min_gain_to_split", 0.0, 2.0),
+        "lambda_l1": trial.suggest_float("lambda_l1", 1e-4, 100.0, log=True),
+        "lambda_l2": trial.suggest_float("lambda_l2", 1e-4, 100.0, log=True),
+        "min_gain_to_split": trial.suggest_float("min_gain_to_split", 0.0, 10.0),
+        "path_smooth": trial.suggest_float("path_smooth", 0.0, 1.0),
     }
 
 
-def score_predictions(metric: str, y_true: pd.Series, pred: np.ndarray) -> float:
-    if metric == "pr_auc":
-        return float(average_precision_score(y_true, pred))
-    return float(roc_auc_score(y_true, pred))
+def compute_fold_metrics(
+    y_true: pd.Series,
+    pred: np.ndarray,
+    pred_label: np.ndarray,
+) -> dict[str, float]:
+    return {
+        "roc_auc": float(roc_auc_score(y_true, pred)),
+        "pr_auc": float(average_precision_score(y_true, pred)),
+        "precision": float(precision_score(y_true, pred_label, zero_division=0)),
+        "recall": float(recall_score(y_true, pred_label, zero_division=0)),
+        "f1": float(f1_score(y_true, pred_label, zero_division=0)),
+    }
 
 
 def build_objective(
@@ -117,7 +122,10 @@ def build_objective(
     def objective(trial: optuna.Trial) -> float:
         params = {**BASE_PARAMS, **suggest_params(trial)}
         fold_scores = []
+        fold_metrics = []
         best_iterations = []
+        oof_true = []
+        oof_pred = []
 
         for fold, (train_idx, valid_idx) in enumerate(cv.split(X, y), start=1):
             X_train, X_valid = X.iloc[train_idx], X.iloc[valid_idx]
@@ -147,9 +155,29 @@ def build_objective(
                 ],
             )
             pred = model.predict(X_valid, num_iteration=model.best_iteration)
-            fold_scores.append(score_predictions(args.metric, y_valid, pred))
-            best_iterations.append(
-                int(model.best_iteration or model.current_iteration())
+            pred_label = (pred >= 0.5).astype(int)
+            metrics = compute_fold_metrics(y_valid, pred, pred_label)
+            score = metrics[args.metric]
+            tn, fp, fn, tp = confusion_matrix(
+                y_valid,
+                pred_label,
+                labels=[0, 1],
+            ).ravel()
+            best_iteration = int(model.best_iteration or model.current_iteration())
+            fold_scores.append(score)
+            best_iterations.append(best_iteration)
+            oof_true.extend(y_valid.tolist())
+            oof_pred.extend(pred_label.tolist())
+            fold_metrics.append(
+                {
+                    "fold": fold,
+                    **metrics,
+                    "true_negative": int(tn),
+                    "false_positive": int(fp),
+                    "false_negative": int(fn),
+                    "true_positive": int(tp),
+                    "best_iteration": best_iteration,
+                }
             )
             trial.report(float(np.mean(fold_scores)), step=fold)
 
@@ -157,6 +185,26 @@ def build_objective(
                 raise optuna.TrialPruned()
 
         trial.set_user_attr("fold_scores", fold_scores)
+        trial.set_user_attr("fold_metrics", fold_metrics)
+        for metric_name in ["roc_auc", "pr_auc", "precision", "recall", "f1"]:
+            trial.set_user_attr(
+                f"mean_{metric_name}",
+                float(np.mean([fold[metric_name] for fold in fold_metrics])),
+            )
+        trial.set_user_attr(
+            "confusion_matrix",
+            confusion_matrix(oof_true, oof_pred, labels=[0, 1]).tolist(),
+        )
+        trial.set_user_attr(
+            "classification_report",
+            classification_report(
+                oof_true,
+                oof_pred,
+                labels=[0, 1],
+                output_dict=True,
+                zero_division=0,
+            ),
+        )
         trial.set_user_attr("best_iterations", best_iterations)
         trial.set_user_attr("mean_best_iteration", float(np.mean(best_iterations)))
         return float(np.mean(fold_scores))
@@ -166,7 +214,7 @@ def build_objective(
 
 def upload_directory(local_dir: Path, gcs_dir: str) -> None:
     if not gcs_dir.startswith("gs://"):
-        raise ValueError("--output-dir must be a GCS URI.")
+        raise ValueError("Artifact output directory must be a GCS URI.")
 
     bucket_name, prefix = gcs_dir.removeprefix("gs://").split("/", 1)
     prefix = prefix.rstrip("/")
@@ -183,6 +231,7 @@ def save_outputs(
     args: argparse.Namespace,
     elapsed_seconds: float,
 ) -> None:
+    best_user_attrs = study.best_trial.user_attrs
     best = {
         "study_name": study.study_name,
         "metric": args.metric,
@@ -190,7 +239,7 @@ def save_outputs(
         "best_trial_number": study.best_trial.number,
         "best_score": study.best_value,
         "best_params": study.best_params,
-        "best_user_attrs": study.best_trial.user_attrs,
+        "best_user_attrs": best_user_attrs,
         "elapsed_seconds": elapsed_seconds,
     }
     (local_dir / "lightgbm_optuna_best_params.json").write_text(
@@ -200,6 +249,34 @@ def save_outputs(
     study.trials_dataframe().to_csv(
         local_dir / "lightgbm_optuna_trials.csv",
         index=False,
+    )
+    cv_metrics = {
+        "evaluation_source": "optuna_stratified_cross_validation",
+        "metric": args.metric,
+        "best_score": study.best_value,
+        "n_splits": args.n_splits,
+        "n_trials": len(study.trials),
+        "best_trial_number": study.best_trial.number,
+        "fold_metrics": best_user_attrs.get("fold_metrics", []),
+        "mean_roc_auc": best_user_attrs.get("mean_roc_auc"),
+        "mean_pr_auc": best_user_attrs.get("mean_pr_auc"),
+        "mean_precision": best_user_attrs.get("mean_precision"),
+        "mean_recall": best_user_attrs.get("mean_recall"),
+        "mean_f1": best_user_attrs.get("mean_f1"),
+        "confusion_matrix": best_user_attrs.get("confusion_matrix", {}),
+        "classification_report": best_user_attrs.get("classification_report", {}),
+    }
+    (local_dir / "cv_metrics.json").write_text(
+        json.dumps(cv_metrics, indent=2),
+        encoding="utf-8",
+    )
+    (local_dir / "cv_classification_report.json").write_text(
+        json.dumps(best_user_attrs.get("classification_report", {}), indent=2),
+        encoding="utf-8",
+    )
+    (local_dir / "cv_confusion_matrix.json").write_text(
+        json.dumps(best_user_attrs.get("confusion_matrix", {}), indent=2),
+        encoding="utf-8",
     )
 
 
@@ -228,8 +305,8 @@ def main() -> None:
     with tempfile.TemporaryDirectory() as tmp_dir:
         local_dir = Path(tmp_dir)
         save_outputs(study, local_dir, args, elapsed_seconds)
-        LOGGER.info("Uploading Optuna artifacts to %s", args.output_dir)
-        upload_directory(local_dir, args.output_dir)
+        LOGGER.info("Uploading Optuna artifacts to %s", TUNING_ARTIFACTS)
+        upload_directory(local_dir, TUNING_ARTIFACTS)
 
     LOGGER.info("Best %s: %.6f", args.metric, study.best_value)
     LOGGER.info("Best params: %s", json.dumps(study.best_params, sort_keys=True))

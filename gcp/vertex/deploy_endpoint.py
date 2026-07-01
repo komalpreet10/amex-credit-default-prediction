@@ -5,21 +5,19 @@ import logging
 
 from google.cloud import aiplatform
 
-PROJECT_ID = "amex-credit-risk-ml"
-LOCATION = "us-central1"
-ENDPOINT_NAME = "amex-credit-default-endpoint"
-MACHINE_TYPE = "n1-standard-2"
+from gcp.config import ENDPOINT_DISPLAY_NAME, PROJECT_ID, REGION
 
 LOGGER = logging.getLogger(__name__)
+MACHINE_TYPE = "n1-standard-2"
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--project", default=PROJECT_ID)
-    parser.add_argument("--location", default=LOCATION)
+    parser.add_argument("--location", default=REGION)
     parser.add_argument("--model", required=True)
     parser.add_argument("--endpoint", default=None)
-    parser.add_argument("--endpoint-name", default=ENDPOINT_NAME)
+    parser.add_argument("--endpoint-name", default=ENDPOINT_DISPLAY_NAME)
     parser.add_argument("--deployed-model-name", default="amex-lightgbm")
     parser.add_argument("--machine-type", default=MACHINE_TYPE)
     parser.add_argument("--min-replica-count", type=int, default=1)
@@ -33,12 +31,11 @@ def get_or_create_endpoint(args: argparse.Namespace) -> aiplatform.Endpoint:
         return aiplatform.Endpoint(args.endpoint)
 
     LOGGER.info("Creating endpoint %s", args.endpoint_name)
-    return aiplatform.Endpoint.create(display_name=args.endpoint_name)
+    return aiplatform.Endpoint.create(display_name=args.endpoint_name, sync=True)
 
 
 def deploy_model(args: argparse.Namespace) -> aiplatform.Endpoint:
     aiplatform.init(project=args.project, location=args.location)
-
     model = aiplatform.Model(args.model)
     endpoint = get_or_create_endpoint(args)
 
@@ -50,8 +47,8 @@ def deploy_model(args: argparse.Namespace) -> aiplatform.Endpoint:
         min_replica_count=args.min_replica_count,
         max_replica_count=args.max_replica_count,
         traffic_percentage=100,
+        sync=True,
     )
-
     LOGGER.info("Deployment complete: %s", endpoint.resource_name)
     return endpoint
 

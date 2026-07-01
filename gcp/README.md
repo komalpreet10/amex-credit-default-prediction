@@ -79,8 +79,8 @@ gcloud dataproc batches submit pyspark gcp/spark/build_features.py \
 
 ## Vertex training artifacts
 
-The Vertex training job saves model artifacts, Optuna CV metrics, final-model
-feature importance, and SHAP explainability plots to:
+The Vertex training job saves model artifacts, selected feature lists, Optuna CV
+metrics, final-model feature importance, and SHAP explainability plots to:
 
 ```text
 gs://amex-credit-risk-ml-data/models/lightgbm/
@@ -96,17 +96,17 @@ runtime for a smoke test, pass a bounded sample size:
 
 Use `--disable-shap` for the fastest smoke test.
 
-## Date-windowed drift test
+## Date-windowed drift
 
-Until test data is added, use date windows from the training statements for a
-first drift check. The local processed data spans:
+Until external current data is added, use date windows from the available
+statement history for a first drift check. The local processed data spans:
 
 ```text
 2017-03-01 through 2018-03-31
 ```
 
-Use the earlier history as the baseline and the final month as the current
-population:
+Use the earlier history as the baseline population and the final month as the
+current population:
 
 ```text
 baseline: 2017-03-01 through 2018-02-28

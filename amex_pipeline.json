@@ -1,5 +1,31 @@
 {
   "components": {
+    "comp-deploy-model-to-endpoint": {
+      "executorLabel": "exec-deploy-model-to-endpoint",
+      "inputDefinitions": {
+        "parameters": {
+          "endpoint_display_name": {
+            "parameterType": "STRING"
+          },
+          "model_resource_name": {
+            "parameterType": "STRING"
+          },
+          "project": {
+            "parameterType": "STRING"
+          },
+          "region": {
+            "parameterType": "STRING"
+          }
+        }
+      },
+      "outputDefinitions": {
+        "parameters": {
+          "Output": {
+            "parameterType": "STRING"
+          }
+        }
+      }
+    },
     "comp-run-vertex-training-job": {
       "executorLabel": "exec-run-vertex-training-job",
       "inputDefinitions": {
@@ -60,11 +86,60 @@
           }
         }
       }
+    },
+    "comp-upload-vertex-model": {
+      "executorLabel": "exec-upload-vertex-model",
+      "inputDefinitions": {
+        "parameters": {
+          "artifact_uri": {
+            "parameterType": "STRING"
+          },
+          "model_display_name": {
+            "parameterType": "STRING"
+          },
+          "project": {
+            "parameterType": "STRING"
+          },
+          "region": {
+            "parameterType": "STRING"
+          },
+          "serving_image": {
+            "parameterType": "STRING"
+          }
+        }
+      },
+      "outputDefinitions": {
+        "parameters": {
+          "Output": {
+            "parameterType": "STRING"
+          }
+        }
+      }
     }
   },
   "defaultPipelineRoot": "gs://amex-credit-risk-ml-data/pipeline-root/",
   "deploymentSpec": {
     "executors": {
+      "exec-deploy-model-to-endpoint": {
+        "container": {
+          "args": [
+            "--executor_input",
+            "{{$}}",
+            "--function_to_execute",
+            "deploy_model_to_endpoint"
+          ],
+          "command": [
+            "sh",
+            "-c",
+            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'google-cloud-aiplatform'  &&  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.16.1' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"$0\" \"$@\"\n",
+            "sh",
+            "-ec",
+            "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef deploy_model_to_endpoint(\n    project: str,\n    region: str,\n    model_resource_name: str,\n    endpoint_display_name: str,\n) -> str:\n    from google.cloud import aiplatform\n\n    aiplatform.init(project=project, location=region)\n    model = aiplatform.Model(model_resource_name)\n    endpoint = aiplatform.Endpoint.create(display_name=endpoint_display_name)\n    model.deploy(\n        endpoint=endpoint,\n        deployed_model_display_name=\"amex-lightgbm\",\n        machine_type=\"n1-standard-2\",\n        min_replica_count=1,\n        max_replica_count=1,\n        traffic_percentage=100,\n        sync=True,\n    )\n    return endpoint.resource_name\n\n"
+          ],
+          "image": "python:3.11"
+        }
+      },
       "exec-run-vertex-training-job": {
         "container": {
           "args": [
@@ -80,7 +155,7 @@
             "sh",
             "-ec",
             "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
-            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef run_vertex_training_job(\n    project: str,\n    region: str,\n    training_image: str,\n    table: str,\n    output_dir: str,\n    params_uri: str,\n) -> str:\n    from google.cloud import aiplatform\n\n    aiplatform.init(project=project, location=region, staging_bucket=output_dir)\n    job = aiplatform.CustomContainerTrainingJob(\n        display_name=\"amex-lightgbm-training\",\n        container_uri=training_image,\n        command=[\"python\", \"gcp/vertex/train.py\"],\n    )\n    model = job.run(\n        args=[\n            \"--project\",\n            project,\n            \"--table\",\n            table,\n            \"--output-dir\",\n            output_dir,\n            \"--params-uri\",\n            params_uri,\n            \"--shap-sample-size\",\n            \"3000\",\n            \"--shap-max-display\",\n            \"30\",\n        ],\n        replica_count=1,\n        machine_type=\"n1-standard-8\",\n        sync=True,\n    )\n    return model.resource_name if model else output_dir\n\n"
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef run_vertex_training_job(\n    project: str,\n    region: str,\n    training_image: str,\n    table: str,\n    output_dir: str,\n    params_uri: str,\n) -> str:\n    from google.cloud import aiplatform\n\n    aiplatform.init(project=project, location=region, staging_bucket=output_dir)\n    job = aiplatform.CustomContainerTrainingJob(\n        display_name=\"amex-lightgbm-training\",\n        container_uri=training_image,\n        command=[\"python\", \"gcp/vertex/train.py\"],\n    )\n    model = job.run(\n        args=[\n            \"--params-uri\",\n            params_uri,\n            \"--shap-sample-size\",\n            \"3000\",\n            \"--shap-max-display\",\n            \"30\",\n        ],\n        replica_count=1,\n        machine_type=\"n2-standard-16\",\n        sync=True,\n    )\n    return model.resource_name if model else output_dir\n\n"
           ],
           "image": "python:3.11"
         }
@@ -100,7 +175,27 @@
             "sh",
             "-ec",
             "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
-            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef run_vertex_tuning_job(\n    project: str,\n    region: str,\n    training_image: str,\n    table: str,\n    output_dir: str,\n) -> str:\n    from google.cloud import aiplatform\n\n    aiplatform.init(project=project, location=region, staging_bucket=output_dir)\n    job = aiplatform.CustomContainerTrainingJob(\n        display_name=\"amex-lightgbm-optuna-tuning\",\n        container_uri=training_image,\n        command=[\"python\", \"gcp/vertex/tune_lightgbm_optuna.py\"],\n    )\n    job.run(\n        args=[\n            \"--project\",\n            project,\n            \"--table\",\n            table,\n            \"--output-dir\",\n            output_dir,\n            \"--n-trials\",\n            \"25\",\n            \"--n-splits\",\n            \"5\",\n            \"--max-rows\",\n            \"100000\",\n        ],\n        replica_count=1,\n        machine_type=\"n1-standard-8\",\n        sync=True,\n    )\n    return f\"{output_dir.rstrip('/')}/lightgbm_optuna_best_params.json\"\n\n"
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef run_vertex_tuning_job(\n    project: str,\n    region: str,\n    training_image: str,\n    table: str,\n    output_dir: str,\n) -> str:\n    from google.cloud import aiplatform\n\n    aiplatform.init(project=project, location=region, staging_bucket=output_dir)\n    job = aiplatform.CustomContainerTrainingJob(\n        display_name=\"amex-lightgbm-optuna-tuning\",\n        container_uri=training_image,\n        command=[\"python\", \"gcp/vertex/tune_lightgbm_optuna.py\"],\n    )\n    job.run(\n        args=[\n            \"--n-trials\",\n            \"15\",\n            \"--n-splits\",\n            \"5\",\n        ],\n        replica_count=1,\n        machine_type=\"n2-standard-16\",\n        sync=True,\n    )\n    return f\"{output_dir.rstrip('/')}/lightgbm_optuna_best_params.json\"\n\n"
+          ],
+          "image": "python:3.11"
+        }
+      },
+      "exec-upload-vertex-model": {
+        "container": {
+          "args": [
+            "--executor_input",
+            "{{$}}",
+            "--function_to_execute",
+            "upload_vertex_model"
+          ],
+          "command": [
+            "sh",
+            "-c",
+            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'google-cloud-aiplatform'  &&  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.16.1' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"$0\" \"$@\"\n",
+            "sh",
+            "-ec",
+            "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef upload_vertex_model(\n    project: str,\n    region: str,\n    artifact_uri: str,\n    serving_image: str,\n    model_display_name: str,\n) -> str:\n    from google.cloud import aiplatform\n\n    if not serving_image:\n        raise ValueError(\n            \"serving_image is required. Build and push docker/Dockerfile.serve, \"\n            \"then pass SERVING_IMAGE_URI or the pipeline serving_image parameter.\"\n        )\n\n    aiplatform.init(project=project, location=region)\n    model = aiplatform.Model.upload(\n        display_name=model_display_name,\n        artifact_uri=artifact_uri,\n        serving_container_image_uri=serving_image,\n        serving_container_predict_route=\"/predict\",\n        serving_container_health_route=\"/health\",\n        serving_container_ports=[8080],\n        labels={\"project\": \"amex-credit-default\", \"model\": \"lightgbm\"},\n        sync=True,\n    )\n    return model.resource_name\n\n"
           ],
           "image": "python:3.11"
         }
@@ -113,6 +208,41 @@
   "root": {
     "dag": {
       "tasks": {
+        "deploy-model-to-endpoint": {
+          "cachingOptions": {
+            "enableCache": true
+          },
+          "componentRef": {
+            "name": "comp-deploy-model-to-endpoint"
+          },
+          "dependentTasks": [
+            "upload-vertex-model"
+          ],
+          "inputs": {
+            "parameters": {
+              "endpoint_display_name": {
+                "runtimeValue": {
+                  "constant": "amex-credit-default-endpoint"
+                }
+              },
+              "model_resource_name": {
+                "taskOutputParameter": {
+                  "outputParameterKey": "Output",
+                  "producerTask": "upload-vertex-model"
+                }
+              },
+              "project": {
+                "componentInputParameter": "project"
+              },
+              "region": {
+                "componentInputParameter": "region"
+              }
+            }
+          },
+          "taskInfo": {
+            "name": "deploy-model-to-endpoint"
+          }
+        },
         "run-vertex-training-job": {
           "cachingOptions": {
             "enableCache": true
@@ -182,6 +312,41 @@
           "taskInfo": {
             "name": "run-vertex-tuning-job"
           }
+        },
+        "upload-vertex-model": {
+          "cachingOptions": {
+            "enableCache": true
+          },
+          "componentRef": {
+            "name": "comp-upload-vertex-model"
+          },
+          "dependentTasks": [
+            "run-vertex-training-job"
+          ],
+          "inputs": {
+            "parameters": {
+              "artifact_uri": {
+                "componentInputParameter": "model_artifacts"
+              },
+              "model_display_name": {
+                "runtimeValue": {
+                  "constant": "amex-lightgbm-credit-default"
+                }
+              },
+              "project": {
+                "componentInputParameter": "project"
+              },
+              "region": {
+                "componentInputParameter": "region"
+              },
+              "serving_image": {
+                "componentInputParameter": "serving_image"
+              }
+            }
+          },
+          "taskInfo": {
+            "name": "upload-vertex-model"
+          }
         }
       }
     },
@@ -232,7 +397,7 @@
           "isOptional": true,
           "parameterType": "STRING"
         },
-        "serving_container_image_uri": {
+        "serving_image": {
           "defaultValue": "",
           "isOptional": true,
           "parameterType": "STRING"
