@@ -9,16 +9,13 @@ from pyspark.sql.types import DoubleType, FloatType
 
 from amex_default.config import CATEGORICAL_FEATURES, DATE_COL, ID_COL
 
-INPUT = "gs://amex-credit-risk-ml-data/raw/train_data.csv"
-OUTPUT = "gs://amex-credit-risk-ml-data/processed/v1/train_preprocessed/"
-
 LOGGER = logging.getLogger(__name__)
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input", default=INPUT)
-    parser.add_argument("--output", default=OUTPUT)
+    parser.add_argument("--input", required=True)
+    parser.add_argument("--output", required=True)
     parser.add_argument("--missing-threshold", type=float, default=80.0)
     parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args()

@@ -6,11 +6,13 @@ import logging
 from google.cloud import bigquery
 from google.cloud.exceptions import NotFound
 
-PROJECT_ID = "amex-credit-risk-ml"
-LOCATION = "US"
-DATASET_ID = "amex_ml"
-TABLE_ID = "train_features"
-SOURCE_URI = "gs://amex-credit-risk-ml-data/processed/v1/train_features/*.parquet"
+from gcp.config import (
+    BQ_LOCATION,
+    DATASET,
+    FEATURES_PARQUET_URI,
+    FEATURE_TABLE_ID,
+    PROJECT_ID,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -18,10 +20,10 @@ LOGGER = logging.getLogger(__name__)
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--project", default=PROJECT_ID)
-    parser.add_argument("--location", default=LOCATION)
-    parser.add_argument("--dataset", default=DATASET_ID)
-    parser.add_argument("--table", default=TABLE_ID)
-    parser.add_argument("--source-uri", default=SOURCE_URI)
+    parser.add_argument("--location", default=BQ_LOCATION)
+    parser.add_argument("--dataset", default=DATASET)
+    parser.add_argument("--table", default=FEATURE_TABLE_ID)
+    parser.add_argument("--source-uri", default=FEATURES_PARQUET_URI)
     parser.add_argument(
         "--write-disposition",
         default=bigquery.WriteDisposition.WRITE_TRUNCATE,

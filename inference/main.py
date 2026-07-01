@@ -9,8 +9,16 @@ import functions_framework
 import redis
 from google.cloud import aiplatform, bigquery, storage
 
-TTL_SECONDS = 2_592_000
-DEFAULT_BQ_TABLE = "amex-credit-risk-ml.amex_ml.train_features"
+from amex_default.redis_config import redis_ssl_ca_certs
+from gcp.config import (
+    FEATURE_TABLE,
+    PROJECT_ID,
+    REDIS_FEATURE_TTL_SECONDS,
+    REDIS_PORT,
+    REDIS_SSL_ENABLED,
+    REGION,
+    SELECTED_FEATURES_URI,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -32,7 +40,7 @@ def load_selected_features() -> list[str]:
     if _selected_features is not None:
         return _selected_features
 
-    uri = required_env("SELECTED_FEATURES_URI")
+    uri = os.environ.get("SELECTED_FEATURES_URI", SELECTED_FEATURES_URI)
     if not uri.startswith("gs://"):
         raise ValueError("SELECTED_FEATURES_URI must be a GCS URI.")
     bucket_name, blob_name = uri.removeprefix("gs://").split("/", 1)
@@ -60,17 +68,19 @@ def init_clients() -> None:
     if _redis_client is not None and _bq_client is not None and _endpoint is not None:
         return
 
-    project = required_env("PROJECT_ID")
+    project = os.environ.get("PROJECT_ID", os.environ.get("GCP_PROJECT_ID", PROJECT_ID))
     redis_host = required_env("REDIS_HOST")
     endpoint_id = required_env("VERTEX_ENDPOINT_ID")
-    location = os.environ.get("LOCATION", os.environ.get("REGION", "us-central1"))
-    redis_port = int(os.environ.get("REDIS_PORT", "6379"))
+    location = os.environ.get("LOCATION", os.environ.get("REGION", REGION))
+    redis_port = int(os.environ.get("REDIS_PORT", str(REDIS_PORT)))
 
     _redis_client = redis.Redis(
         host=redis_host,
         port=redis_port,
         decode_responses=True,
         socket_timeout=10,
+        ssl=REDIS_SSL_ENABLED,
+        ssl_ca_certs=redis_ssl_ca_certs(),
     )
     _redis_client.ping()
     _bq_client = bigquery.Client(project=project)
@@ -107,17 +117,19 @@ def write_through_redis(customer_id: str, feature_vector: dict[str, Any]) -> Non
     try:
         _redis_client.setex(
             f"features:{customer_id}",
-            TTL_SECONDS,
+            REDIS_FEATURE_TTL_SECONDS,
             json.dumps(feature_vector, separators=(",", ":")),
         )
     except Exception:
-        LOGGER.warning("Redis write-through failed for customer_ID=%s", customer_id, exc_info=True)
+        LOGGER.warning(
+            "Redis write-through failed for customer_ID=%s", customer_id, exc_info=True
+        )
 
 
 def lookup_bigquery(customer_id: str, features: list[str]) -> dict[str, Any] | None:
     if _bq_client is None:
         raise RuntimeError("BigQuery client is not initialized.")
-    table = os.environ.get("BQ_TABLE", DEFAULT_BQ_TABLE)
+    table = os.environ.get("BQ_TABLE", FEATURE_TABLE)
     query = (
         "SELECT "
         + ", ".join(quote_identifier(feature) for feature in features)

@@ -7,18 +7,14 @@ from pyspark.sql import functions as F
 from amex_default.config import DATE_COL, ID_COL
 from amex_default.features_spark import build_customer_features
 
-INPUT = "gs://amex-credit-risk-ml-data/processed/v1/train_preprocessed/"
-LABELS = "gs://amex-credit-risk-ml-data/raw/train_labels.csv"
-OUTPUT = "gs://amex-credit-risk-ml-data/processed/v1/train_features/"
-
 LOGGER = logging.getLogger(__name__)
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input", default=INPUT)
-    parser.add_argument("--labels", default=LABELS)
-    parser.add_argument("--output", default=OUTPUT)
+    parser.add_argument("--input", required=True)
+    parser.add_argument("--labels", default=None)
+    parser.add_argument("--output", required=True)
     parser.add_argument("--start-date", default=None)
     parser.add_argument("--end-date", default=None)
     parser.add_argument("--overwrite", action="store_true")

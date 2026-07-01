@@ -51,6 +51,12 @@ DEFAULT_PARAMS = {
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--params-uri", default=None)
+    parser.add_argument("--output-dir", default=MODEL_ARTIFACTS)
+    parser.add_argument("--max-rows", type=int, default=None)
+    parser.add_argument("--balanced-smoke-sample", action="store_true")
+    parser.add_argument(
+        "--selector-num-boost-round", type=int, default=SELECTOR_NUM_BOOST_ROUND
+    )
     parser.add_argument("--final-num-boost-round", type=int, default=300)
     parser.add_argument("--feature-selection-threshold", type=float, default=0.95)
     parser.add_argument("--min-selected-features", type=int, default=300)
@@ -58,7 +64,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--shap-sample-size", type=int, default=None)
     parser.add_argument("--shap-max-display", type=int, default=30)
     parser.add_argument("--disable-shap", action="store_true")
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.max_rows is not None and args.max_rows <= 1:
+        raise ValueError("--max-rows must be greater than 1.")
+    if args.selector_num_boost_round <= 0:
+        raise ValueError("--selector-num-boost-round must be positive.")
+    return args
 
 
 def load_tuning_result(
@@ -81,10 +92,43 @@ def load_tuning_result(
     return params, data
 
 
-def read_training_data() -> pd.DataFrame:
+def read_training_data(args: argparse.Namespace) -> pd.DataFrame:
     client = bigquery.Client(project=PROJECT_ID, location=BQ_LOCATION)
-    query = f"SELECT * FROM `{FEATURE_TABLE}`"
-    LOGGER.info("Reading training data from BigQuery table %s", FEATURE_TABLE)
+    if args.max_rows is None:
+        query = f"SELECT * FROM `{FEATURE_TABLE}`"
+        LOGGER.info("Reading full training data from BigQuery table %s", FEATURE_TABLE)
+        return client.query(query).result().to_dataframe()
+
+    if args.balanced_smoke_sample:
+        positive_rows = max(1, args.max_rows // 2)
+        negative_rows = args.max_rows - positive_rows
+        query = f"""
+        (
+          SELECT * FROM `{FEATURE_TABLE}`
+          WHERE {TARGET_COL} = 1
+          LIMIT {positive_rows}
+        )
+        UNION ALL
+        (
+          SELECT * FROM `{FEATURE_TABLE}`
+          WHERE {TARGET_COL} = 0
+          LIMIT {negative_rows}
+        )
+        """
+        LOGGER.info(
+            "Reading balanced smoke sample from %s: %d positive rows, %d negative rows",
+            FEATURE_TABLE,
+            positive_rows,
+            negative_rows,
+        )
+        return client.query(query).result().to_dataframe()
+
+    query = f"SELECT * FROM `{FEATURE_TABLE}` LIMIT {args.max_rows}"
+    LOGGER.info(
+        "Reading smoke sample from BigQuery table %s: max_rows=%d",
+        FEATURE_TABLE,
+        args.max_rows,
+    )
     return client.query(query).result().to_dataframe()
 
 
@@ -199,6 +243,9 @@ def build_metrics(
         "scale_pos_weight": scale_pos_weight,
         "training_time_seconds": elapsed_seconds,
         "evaluation_source": "optuna_cross_validation",
+        "max_rows": args.max_rows,
+        "balanced_smoke_sample": args.balanced_smoke_sample,
+        "selector_num_boost_round": args.selector_num_boost_round,
         "tuning_metric": tuning_result.get("metric"),
         "tuning_cv_score": tuning_result.get("best_score"),
         "tuning_n_trials": tuning_result.get("n_trials"),
@@ -280,6 +327,9 @@ def log_vertex_experiment(
                 {
                     "model": "lightgbm",
                     "final_num_boost_round": args.final_num_boost_round,
+                    "selector_num_boost_round": args.selector_num_boost_round,
+                    "max_rows": args.max_rows,
+                    "balanced_smoke_sample": args.balanced_smoke_sample,
                     "feature_selection_threshold": args.feature_selection_threshold,
                     "min_selected_features": args.min_selected_features,
                     "max_selected_features": args.max_selected_features,
@@ -319,6 +369,9 @@ def log_mlflow_run(
                     "model": "lightgbm",
                     "feature_table": FEATURE_TABLE,
                     "final_num_boost_round": args.final_num_boost_round,
+                    "selector_num_boost_round": args.selector_num_boost_round,
+                    "max_rows": args.max_rows,
+                    "balanced_smoke_sample": args.balanced_smoke_sample,
                     "feature_selection_threshold": args.feature_selection_threshold,
                     "min_selected_features": args.min_selected_features,
                     "max_selected_features": args.max_selected_features,
@@ -354,7 +407,7 @@ def main() -> None:
     args = parse_args()
 
     start = time.perf_counter()
-    df = read_training_data()
+    df = read_training_data(args)
     X, y = split_features_target(df)
     scale_pos_weight = compute_scale_pos_weight(y)
 
@@ -373,9 +426,9 @@ def main() -> None:
         # ── Step 1: Selector model (100 rounds — only needs feature ranking) ──
         LOGGER.info(
             "Training selector model (%d rounds) for feature importance",
-            SELECTOR_NUM_BOOST_ROUND,
+            args.selector_num_boost_round,
         )
-        selector_model = train_model(X, y, model_params, SELECTOR_NUM_BOOST_ROUND)
+        selector_model = train_model(X, y, model_params, args.selector_num_boost_round)
         feature_importance = build_feature_importance(selector_model)
         selected_features = select_features(
             feature_importance,
@@ -439,8 +492,8 @@ def main() -> None:
         log_vertex_experiment(args, metrics)
 
         # ── Step 7: Upload to GCS ─────────────────────────────────────────────
-        LOGGER.info("Uploading model artifacts to %s", MODEL_ARTIFACTS)
-        upload_directory(output_dir, MODEL_ARTIFACTS)
+        LOGGER.info("Uploading model artifacts to %s", args.output_dir)
+        upload_directory(output_dir, args.output_dir)
 
     LOGGER.info(
         "Done — tuning %s: %s | selected features: %d | time: %.1fs",

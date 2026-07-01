@@ -8,15 +8,15 @@ import numpy as np
 import pandas as pd
 from google.cloud import bigquery, storage
 
-PROJECT_ID = "amex-credit-risk-ml"
-BQ_LOCATION = "US"
-BASELINE_TABLE = "amex-credit-risk-ml.amex_ml.train_features"
-CURRENT_TABLE = "amex-credit-risk-ml.amex_ml.train_features"
-METRICS_TABLE = "amex-credit-risk-ml.amex_ml.drift_metrics"
-OUTPUT_URI = "gs://amex-credit-risk-ml-data/monitoring/drift_report.csv"
+from amex_default.config import ID_COL, TARGET_COL
+from gcp.config import (
+    BQ_LOCATION,
+    DRIFT_REPORT,
+    DRIFT_TABLE,
+    FEATURE_TABLE,
+    PROJECT_ID,
+)
 
-ID_COL = "customer_ID"
-TARGET_COL = "target"
 PSI_THRESHOLD = 0.2
 
 LOGGER = logging.getLogger(__name__)
@@ -26,10 +26,10 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--project", default=PROJECT_ID)
     parser.add_argument("--bq-location", default=BQ_LOCATION)
-    parser.add_argument("--baseline-table", default=BASELINE_TABLE)
-    parser.add_argument("--current-table", default=CURRENT_TABLE)
-    parser.add_argument("--metrics-table", default=METRICS_TABLE)
-    parser.add_argument("--output-uri", default=OUTPUT_URI)
+    parser.add_argument("--baseline-table", default=FEATURE_TABLE)
+    parser.add_argument("--current-table", default=FEATURE_TABLE)
+    parser.add_argument("--metrics-table", default=DRIFT_TABLE)
+    parser.add_argument("--output-uri", default=DRIFT_REPORT)
     parser.add_argument("--psi-threshold", type=float, default=PSI_THRESHOLD)
     parser.add_argument("--bins", type=int, default=10)
     parser.add_argument("--max-rows", type=int, default=None)
