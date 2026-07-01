@@ -141,7 +141,7 @@ jobs:
           VERTEX_PIPELINE_ROOT: ${{ secrets.VERTEX_PIPELINE_ROOT }}
           TRAINING_IMAGE_URI: ${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/amex-ml/amex-train:latest
         run: |
-          python gcp/pipeline.py
+          python -m gcp.pipeline
 
       - name: Publish compiled pipeline template
         env:
