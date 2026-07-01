@@ -92,38 +92,6 @@ docker/              Training and serving Dockerfiles
 docs/images/         README plots
 ```
 
-## Key GCP Resources
-
-```text
-Project:          amex-credit-risk-ml
-Region:           us-central1
-Bucket:           gs://amex-credit-risk-ml-data/
-Feature table:    amex-credit-risk-ml.amex_ml.train_features
-Model artifacts:  gs://amex-credit-risk-ml-data/models/lightgbm/
-Tuning artifacts: gs://amex-credit-risk-ml-data/models/lightgbm/tuning/
-Endpoint:         amex-credit-default-endpoint
-Redis:            amex-feature-cache
-```
-
-## Pipeline Outputs
-
-```text
-models/lightgbm/
-  model.txt
-  metrics.json
-  selected_feature_list.json
-  full_feature_list.json
-  feature_importance.csv
-  plots/
-  mlruns/
-
-models/lightgbm/tuning/
-  lightgbm_optuna_best_params.json
-  lightgbm_optuna_trials.csv
-  cv_metrics.json
-  cv_classification_report.json
-```
-
 ## Run
 
 Compile the Vertex AI pipeline:
