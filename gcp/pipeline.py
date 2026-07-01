@@ -2,29 +2,35 @@ from kfp import compiler, dsl
 
 from gcp.config import (
     BQ_LOCATION,
+    DATAPROC_RUNTIME_PROPERTIES,
     DEPLOYED_MODEL_DISPLAY_NAME,
     ENDPOINT_DISPLAY_NAME,
     ENDPOINT_MACHINE_TYPE,
     ENDPOINT_MAX_REPLICA_COUNT,
     ENDPOINT_MIN_REPLICA_COUNT,
     ENDPOINT_TRAFFIC_PERCENTAGE,
+    FEATURE_SCRIPT,
     FEATURE_TABLE,
     FEATURES,
     MODEL_ARTIFACTS,
     MODEL_DISPLAY_NAME,
     PIPELINE_ROOT,
     PREPROCESSED,
+    PREPROCESS_SCRIPT,
     PROJECT_ID,
+    PY_FILES,
     RAW_DATA,
     RAW_LABELS,
     REGION,
     SERVING_IMAGE,
+    TEST_FEATURE_TABLE,
     TRAINING_JOB_DISPLAY_NAME,
     TRAINING_MACHINE_TYPE,
     TRAINING_REPLICA_COUNT,
     TRAINING_SHAP_MAX_DISPLAY,
     TRAINING_SHAP_SAMPLE_SIZE,
     TRAINING_IMAGE,
+    TRAIN_FEATURE_TABLE,
     TUNING_JOB_DISPLAY_NAME,
     TUNING_MACHINE_TYPE,
     TUNED_PARAMS_URI,
@@ -119,6 +125,41 @@ def load_features_to_bigquery(
 
 @dsl.component(
     base_image="python:3.11",
+    packages_to_install=["google-cloud-bigquery"],
+)
+def split_bigquery_feature_table(
+    project: str,
+    location: str,
+    source_table: str,
+    train_table: str,
+    test_table: str,
+    train_ratio: float,
+) -> str:
+    from google.cloud import bigquery
+
+    if not 0 < train_ratio < 1:
+        raise ValueError("train_ratio must be between 0 and 1.")
+
+    client = bigquery.Client(project=project, location=location)
+    threshold = int(train_ratio * 100)
+    split_expr = "MOD(ABS(FARM_FINGERPRINT(CAST(customer_ID AS STRING))), 100)"
+    for destination, condition in (
+        (train_table, f"{split_expr} < {threshold}"),
+        (test_table, f"{split_expr} >= {threshold}"),
+    ):
+        query = f"""
+        CREATE OR REPLACE TABLE `{destination}` AS
+        SELECT *
+        FROM `{source_table}`
+        WHERE {condition}
+        """
+        client.query(query, location=location).result()
+
+    return train_table
+
+
+@dsl.component(
+    base_image="python:3.11",
     packages_to_install=["google-cloud-aiplatform"],
 )
 def run_vertex_tuning_job(
@@ -128,6 +169,7 @@ def run_vertex_tuning_job(
     table: str,
     output_dir: str,
     display_name: str,
+    metric: str,
     n_trials: int,
     n_splits: int,
     num_boost_round: int,
@@ -146,6 +188,10 @@ def run_vertex_tuning_job(
         command=["python", "gcp/vertex/tune_lightgbm_optuna.py"],
     )
     job_args = [
+        "--table",
+        table,
+        "--metric",
+        metric,
         "--n-trials",
         str(n_trials),
         "--n-splits",
@@ -179,6 +225,7 @@ def run_vertex_training_job(
     region: str,
     training_image: str,
     table: str,
+    eval_table: str,
     output_dir: str,
     params_uri: str,
     display_name: str,
@@ -203,6 +250,10 @@ def run_vertex_training_job(
         command=["python", "gcp/vertex/train.py"],
     )
     job_args = [
+        "--table",
+        table,
+        "--eval-table",
+        eval_table,
         "--params-uri",
         params_uri,
         "--output-dir",
@@ -401,61 +452,71 @@ def amex_pipeline(
     preprocessed_output: str = PREPROCESSED,
     feature_output: str = FEATURES,
     feature_table: str = FEATURE_TABLE,
+    train_feature_table: str = TRAIN_FEATURE_TABLE,
+    test_feature_table: str = TEST_FEATURE_TABLE,
+    train_ratio: float = 0.8,
     model_artifacts: str = MODEL_ARTIFACTS,
     training_image: str = TRAINING_IMAGE,
     serving_image: str = SERVING_IMAGE,
 ) -> None:
-    # Feature engineering has already been completed and loaded to BigQuery.
-    # Leave these steps here for full reruns, but keep them disabled when starting
-    # from the existing feature table.
-    # preprocess = submit_dataproc_pyspark_batch(
-    #     project=project,
-    #     region=region,
-    #     batch_id="amex-preprocess",
-    #     main_python_file_uri=PREPROCESS_SCRIPT,
-    #     py_file_uris=PY_FILES,
-    #     runtime_properties=DATAPROC_RUNTIME_PROPERTIES,
-    #     args=[
-    #         "--input",
-    #         raw_data,
-    #         "--output",
-    #         preprocessed_output,
-    #         "--overwrite",
-    #     ],
-    # )
+    preprocess = submit_dataproc_pyspark_batch(
+        project=project,
+        region=region,
+        batch_id="amex-preprocess",
+        main_python_file_uri=PREPROCESS_SCRIPT,
+        py_file_uris=PY_FILES,
+        runtime_properties=DATAPROC_RUNTIME_PROPERTIES,
+        args=[
+            "--input",
+            raw_data,
+            "--output",
+            preprocessed_output,
+            "--overwrite",
+        ],
+    )
 
-    # build_features = submit_dataproc_pyspark_batch(
-    #     project=project,
-    #     region=region,
-    #     batch_id="amex-build-features",
-    #     main_python_file_uri=FEATURE_SCRIPT,
-    #     py_file_uris=PY_FILES,
-    #     runtime_properties=DATAPROC_RUNTIME_PROPERTIES,
-    #     args=[
-    #         "--input",
-    #         preprocessed_output,
-    #         "--labels",
-    #         raw_labels,
-    #         "--output",
-    #         feature_output,
-    #         "--overwrite",
-    #     ],
-    # )
-    # build_features.after(preprocess)
+    build_features = submit_dataproc_pyspark_batch(
+        project=project,
+        region=region,
+        batch_id="amex-build-features",
+        main_python_file_uri=FEATURE_SCRIPT,
+        py_file_uris=PY_FILES,
+        runtime_properties=DATAPROC_RUNTIME_PROPERTIES,
+        args=[
+            "--input",
+            preprocessed_output,
+            "--labels",
+            raw_labels,
+            "--output",
+            feature_output,
+            "--overwrite",
+        ],
+    )
+    build_features.after(preprocess)
 
-    # load_bq = load_features_to_bigquery(
-    #     project=project,
-    #     location=bq_location,
-    #     source_uri=f"{feature_output}*.parquet",
-    #     table=feature_table,
-    # )
-    # load_bq.after(build_features)
+    load_bq = load_features_to_bigquery(
+        project=project,
+        location=bq_location,
+        source_uri=f"{feature_output}*.parquet",
+        table=feature_table,
+    )
+    load_bq.after(build_features)
+
+    split = split_bigquery_feature_table(
+        project=project,
+        location=bq_location,
+        source_table=load_bq.output,
+        train_table=train_feature_table,
+        test_table=test_feature_table,
+        train_ratio=train_ratio,
+    )
 
     training = run_vertex_training_job(
         project=project,
         region=region,
         training_image=training_image,
-        table=feature_table,
+        table=train_feature_table,
+        eval_table=test_feature_table,
         output_dir=model_artifacts,
         params_uri=TUNED_PARAMS_URI,
         display_name=TRAINING_JOB_DISPLAY_NAME,
@@ -475,9 +536,10 @@ def amex_pipeline(
         project=project,
         region=region,
         training_image=training_image,
-        table=feature_table,
+        table=train_feature_table,
         output_dir=TUNING_ARTIFACTS,
         display_name=TUNING_JOB_DISPLAY_NAME,
+        metric="pr_auc",
         n_trials=TUNING_N_TRIALS,
         n_splits=TUNING_N_SPLITS,
         num_boost_round=700,
@@ -487,6 +549,7 @@ def amex_pipeline(
         replica_count=TUNING_REPLICA_COUNT,
         machine_type=TUNING_MACHINE_TYPE,
     )
+    tuning.after(split)
     training.after(tuning)
 
     model = upload_vertex_model(

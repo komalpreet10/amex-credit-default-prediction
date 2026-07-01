@@ -8,8 +8,18 @@ import time
 from pathlib import Path
 
 import lightgbm as lgb
+import matplotlib
 import pandas as pd
 from google.cloud import bigquery, storage
+from sklearn.metrics import (
+    average_precision_score,
+    f1_score,
+    precision_recall_curve,
+    precision_score,
+    recall_score,
+    roc_auc_score,
+    roc_curve,
+)
 
 from amex_default.config import ID_COL, RANDOM_STATE, TARGET_COL
 from amex_default.interpret import save_best_fold_shap_plots
@@ -25,6 +35,7 @@ from gcp.config import (
 SELECTOR_NUM_BOOST_ROUND = 100  # selector model only needs feature ranking
 
 LOGGER = logging.getLogger(__name__)
+matplotlib.use("Agg")
 
 DEFAULT_PARAMS = {
     "objective": "binary",
@@ -50,6 +61,8 @@ DEFAULT_PARAMS = {
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--table", default=FEATURE_TABLE)
+    parser.add_argument("--eval-table", default="")
     parser.add_argument("--params-uri", default=None)
     parser.add_argument("--output-dir", default=MODEL_ARTIFACTS)
     parser.add_argument("--max-rows", type=int, default=None)
@@ -92,41 +105,46 @@ def load_tuning_result(
     return params, data
 
 
+def read_feature_table(table: str) -> pd.DataFrame:
+    client = bigquery.Client(project=PROJECT_ID, location=BQ_LOCATION)
+    query = f"SELECT * FROM `{table}`"
+    LOGGER.info("Reading feature data from BigQuery table %s", table)
+    return client.query(query).result().to_dataframe()
+
+
 def read_training_data(args: argparse.Namespace) -> pd.DataFrame:
     client = bigquery.Client(project=PROJECT_ID, location=BQ_LOCATION)
     if args.max_rows is None:
-        query = f"SELECT * FROM `{FEATURE_TABLE}`"
-        LOGGER.info("Reading full training data from BigQuery table %s", FEATURE_TABLE)
-        return client.query(query).result().to_dataframe()
+        return read_feature_table(args.table)
 
     if args.balanced_smoke_sample:
         positive_rows = max(1, args.max_rows // 2)
         negative_rows = args.max_rows - positive_rows
         query = f"""
         (
-          SELECT * FROM `{FEATURE_TABLE}`
+          SELECT * FROM `{args.table}`
           WHERE {TARGET_COL} = 1
           LIMIT {positive_rows}
         )
         UNION ALL
         (
-          SELECT * FROM `{FEATURE_TABLE}`
+          SELECT * FROM `{args.table}`
           WHERE {TARGET_COL} = 0
           LIMIT {negative_rows}
         )
         """
         LOGGER.info(
             "Reading balanced smoke sample from %s: %d positive rows, %d negative rows",
-            FEATURE_TABLE,
+            args.table,
             positive_rows,
             negative_rows,
         )
         return client.query(query).result().to_dataframe()
 
-    query = f"SELECT * FROM `{FEATURE_TABLE}` LIMIT {args.max_rows}"
+    query = f"SELECT * FROM `{args.table}` LIMIT {args.max_rows}"
     LOGGER.info(
         "Reading smoke sample from BigQuery table %s: max_rows=%d",
-        FEATURE_TABLE,
+        args.table,
         args.max_rows,
     )
     return client.query(query).result().to_dataframe()
@@ -231,11 +249,10 @@ def build_metrics(
     elapsed_seconds: float,
 ) -> dict[str, object]:
     best_user_attrs = tuning_result.get("best_user_attrs", {})
-    confusion = best_user_attrs.get("confusion_matrix") or [[None, None], [None, None]]
-    true_negative, false_positive = confusion[0]
-    false_negative, true_positive = confusion[1]
     return {
         "model": "lightgbm",
+        "train_table": args.table,
+        "eval_table": args.eval_table or None,
         "n_rows": int(len(X)),
         "n_features": int(X.shape[1]),
         "full_feature_count": int(tuning_result.get("full_feature_count", X.shape[1])),
@@ -255,10 +272,6 @@ def build_metrics(
         "cv_precision": best_user_attrs.get("mean_precision"),
         "cv_recall": best_user_attrs.get("mean_recall"),
         "cv_f1": best_user_attrs.get("mean_f1"),
-        "cv_true_negative": true_negative,
-        "cv_false_positive": false_positive,
-        "cv_false_negative": false_negative,
-        "cv_true_positive": true_positive,
         "tuning_best_user_attrs": tuning_result.get("best_user_attrs", {}),
         "final_num_boost_round": args.final_num_boost_round,
         "feature_selection_threshold": args.feature_selection_threshold,
@@ -294,6 +307,103 @@ def save_shap_plots(
         output_dir,
         max_display=args.shap_max_display,
     )
+
+
+def align_eval_features(
+    X_eval: pd.DataFrame,
+    X_train: pd.DataFrame,
+    selected_features: list[str],
+) -> pd.DataFrame:
+    missing = [
+        feature for feature in selected_features if feature not in X_eval.columns
+    ]
+    if missing:
+        LOGGER.warning("Evaluation table missing %d selected features", len(missing))
+        for feature in missing:
+            X_eval[feature] = 0.0
+
+    X_eval = X_eval[selected_features].copy()
+    for column in selected_features:
+        if str(X_train[column].dtype) == "category":
+            X_eval[column] = X_eval[column].astype("category")
+            X_eval[column] = X_eval[column].cat.set_categories(
+                X_train[column].cat.categories
+            )
+    return X_eval
+
+
+def plot_roc_curve(y_true: pd.Series, y_score, path: Path) -> None:
+    import matplotlib.pyplot as plt
+
+    fpr, tpr, _ = roc_curve(y_true, y_score)
+    auc = roc_auc_score(y_true, y_score)
+    fig, ax = plt.subplots(figsize=(7, 5))
+    ax.plot(fpr, tpr, label=f"ROC-AUC = {auc:.4f}")
+    ax.plot([0, 1], [0, 1], linestyle="--", color="gray", linewidth=1)
+    ax.set_xlabel("False Positive Rate")
+    ax.set_ylabel("True Positive Rate")
+    ax.set_title("Holdout ROC Curve")
+    ax.legend(loc="lower right")
+    fig.tight_layout()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(path, dpi=160)
+    plt.close(fig)
+
+
+def plot_pr_curve(y_true: pd.Series, y_score, path: Path) -> None:
+    import matplotlib.pyplot as plt
+
+    precision, recall, _ = precision_recall_curve(y_true, y_score)
+    auc = average_precision_score(y_true, y_score)
+    fig, ax = plt.subplots(figsize=(7, 5))
+    ax.plot(recall, precision, label=f"PR-AUC = {auc:.4f}")
+    ax.set_xlabel("Recall")
+    ax.set_ylabel("Precision")
+    ax.set_title("Holdout Precision-Recall Curve")
+    ax.legend(loc="upper right")
+    fig.tight_layout()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(path, dpi=160)
+    plt.close(fig)
+
+
+def evaluate_holdout(
+    model: lgb.Booster,
+    args: argparse.Namespace,
+    X_train_selected: pd.DataFrame,
+    selected_features: list[str],
+    output_dir: Path,
+) -> dict[str, object]:
+    if not args.eval_table:
+        LOGGER.info("No --eval-table provided; skipping holdout evaluation")
+        return {}
+
+    eval_df = read_feature_table(args.eval_table)
+    X_eval, y_eval = split_features_target(eval_df)
+    X_eval_selected = align_eval_features(X_eval, X_train_selected, selected_features)
+    pred = model.predict(X_eval_selected)
+    pred_label = (pred >= 0.5).astype(int)
+
+    metrics = {
+        "test_table": args.eval_table,
+        "test_rows": int(len(X_eval_selected)),
+        "test_roc_auc": float(roc_auc_score(y_eval, pred)),
+        "test_pr_auc": float(average_precision_score(y_eval, pred)),
+        "test_precision": float(precision_score(y_eval, pred_label, zero_division=0)),
+        "test_recall": float(recall_score(y_eval, pred_label, zero_division=0)),
+        "test_f1": float(f1_score(y_eval, pred_label, zero_division=0)),
+        "test_threshold": 0.5,
+    }
+    plot_roc_curve(y_eval, pred, output_dir / "plots" / "test_roc_curve.png")
+    plot_pr_curve(y_eval, pred, output_dir / "plots" / "test_pr_curve.png")
+    pd.DataFrame(
+        {
+            ID_COL: eval_df[ID_COL],
+            TARGET_COL: y_eval,
+            "prediction": pred,
+        }
+    ).to_csv(output_dir / "test_predictions.csv", index=False)
+    return metrics
 
 
 def upload_directory(local_dir: Path, gcs_dir: str) -> None:
@@ -367,7 +477,7 @@ def log_mlflow_run(
             mlflow.log_params(
                 {
                     "model": "lightgbm",
-                    "feature_table": FEATURE_TABLE,
+                    "feature_table": args.table,
                     "final_num_boost_round": args.final_num_boost_round,
                     "selector_num_boost_round": args.selector_num_boost_round,
                     "max_rows": args.max_rows,
@@ -465,6 +575,15 @@ def main() -> None:
             tuning_result={**tuning_result, "full_feature_count": int(X.shape[1])},
             scale_pos_weight=scale_pos_weight,
             elapsed_seconds=time.perf_counter() - start,
+        )
+        metrics.update(
+            evaluate_holdout(
+                final_model,
+                args,
+                X_selected,
+                selected_features,
+                output_dir,
+            )
         )
 
         # ── Step 4: Save artifacts ────────────────────────────────────────────

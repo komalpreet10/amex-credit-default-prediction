@@ -5,6 +5,7 @@ import logging
 
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
+from pyspark.storagelevel import StorageLevel
 from pyspark.sql.types import DoubleType, FloatType
 
 from amex_default.config import CATEGORICAL_FEATURES, DATE_COL, ID_COL
@@ -27,7 +28,9 @@ def preprocess(df: DataFrame, missing_threshold: float) -> tuple[DataFrame, list
     if missing_required:
         raise ValueError(f"Missing required columns: {sorted(missing_required)}")
 
-    df = df.withColumn(DATE_COL, F.to_date(DATE_COL))
+    df = df.withColumn(DATE_COL, F.to_date(DATE_COL)).persist(
+        StorageLevel.MEMORY_AND_DISK
+    )
 
     total_rows = df.count()
     if total_rows == 0:
@@ -92,6 +95,7 @@ def main() -> None:
             mode=mode,
             compression="snappy",
         )
+        preprocessed.unpersist()
 
     finally:
         spark.stop()

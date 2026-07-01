@@ -124,6 +124,15 @@ jobs:
           docker build -f docker/Dockerfile.train -t "${IMAGE_URI}" .
           docker push "${IMAGE_URI}"
 
+      - name: Build and push serving image
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GCP_REGION: ${{ secrets.GCP_REGION }}
+        run: |
+          IMAGE_URI="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/amex-ml/amex-serve:latest"
+          docker build -f docker/Dockerfile.serve -t "${IMAGE_URI}" .
+          docker push "${IMAGE_URI}"
+
       - name: Package and publish Spark job code
         env:
           VERTEX_PIPELINE_ROOT: ${{ secrets.VERTEX_PIPELINE_ROOT }}
@@ -140,6 +149,7 @@ jobs:
           GCP_REGION: ${{ secrets.GCP_REGION }}
           VERTEX_PIPELINE_ROOT: ${{ secrets.VERTEX_PIPELINE_ROOT }}
           TRAINING_IMAGE_URI: ${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/amex-ml/amex-train:latest
+          SERVING_IMAGE_URI: ${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/amex-ml/amex-serve:latest
         run: |
           python -m gcp.pipeline
           python -m gcp.pipeline_smoke

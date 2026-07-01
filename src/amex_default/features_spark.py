@@ -21,13 +21,6 @@ def infer_continuous_features(
     ]
 
 
-def join_frames(frames: list[DataFrame]) -> DataFrame:
-    result = frames[0]
-    for frame in frames[1:]:
-        result = result.join(frame, on=ID_COL, how="left")
-    return result
-
-
 def build_customer_features(
     df: DataFrame,
     categorical_features: Sequence[str] = CATEGORICAL_FEATURES,
@@ -45,125 +38,75 @@ def build_customer_features(
     latest_window = Window.partitionBy(ID_COL).orderBy(F.col(DATE_COL).desc())
     earliest_window = Window.partitionBy(ID_COL).orderBy(F.col(DATE_COL).asc())
 
-    base = df.select(ID_COL).distinct()
-    frames = [base]
+    df = df.withColumn("_rn_desc", F.row_number().over(latest_window)).withColumn(
+        "_rn_asc",
+        F.row_number().over(earliest_window),
+    )
 
+    aggregate_exprs = []
     if TARGET_COL in df.columns:
-        target = df.groupBy(ID_COL).agg(F.max(TARGET_COL).alias(TARGET_COL))
-        frames.append(target)
+        aggregate_exprs.append(F.max(TARGET_COL).alias(TARGET_COL))
 
     if continuous:
-        full_exprs = []
+        diff_columns = [
+            (F.col(c) - F.lag(F.col(c)).over(earliest_window)).alias(f"{c}_diff")
+            for c in continuous
+        ]
+        df = df.select("*", *diff_columns)
+
         for c in continuous:
-            full_exprs.extend(
+            aggregate_exprs.extend(
                 [
                     F.mean(c).alias(f"{c}_mean"),
                     F.stddev(c).alias(f"{c}_std"),
                     F.min(c).alias(f"{c}_min"),
                     F.max(c).alias(f"{c}_max"),
                     F.expr(f"percentile_approx(`{c}`, 0.5)").alias(f"{c}_median"),
+                    F.max(F.when(F.col("_rn_desc") == 1, F.col(c))).alias(f"{c}_last"),
+                    F.max(F.when(F.col("_rn_asc") == 1, F.col(c))).alias(f"{c}_first"),
                 ]
             )
 
-        full_agg = df.groupBy(ID_COL).agg(*full_exprs)
-
-        latest = (
-            df.withColumn("_rn", F.row_number().over(latest_window))
-            .where(F.col("_rn") == 1)
-            .select(ID_COL, *[F.col(c).alias(f"{c}_last") for c in continuous])
-        )
-
-        earliest = (
-            df.withColumn("_rn", F.row_number().over(earliest_window))
-            .where(F.col("_rn") == 1)
-            .select(ID_COL, *[F.col(c).alias(f"{c}_first") for c in continuous])
-        )
-
-        full_features = full_agg.join(latest, ID_COL, "left").join(
-            earliest, ID_COL, "left"
-        )
-
-        lag_features = full_features.select(
-            ID_COL,
-            *[
-                (F.col(f"{c}_last") - F.col(f"{c}_mean")).alias(f"{c}_last_minus_mean")
-                for c in continuous
-            ],
-        )
-
-        frames.extend([full_features, lag_features])
-
         for n in (3, 6):
             suffix = f"{n}m"
-
-            recent = (
-                df.withColumn("_rn", F.row_number().over(latest_window))
-                .where(F.col("_rn") <= n)
-                .drop("_rn")
-            )
-
-            recent_exprs = []
             for c in continuous:
-                recent_exprs.extend(
+                recent_value = F.when(F.col("_rn_desc") <= n, F.col(c))
+                aggregate_exprs.extend(
                     [
-                        F.mean(c).alias(f"{c}_mean_{suffix}"),
-                        F.stddev(c).alias(f"{c}_std_{suffix}"),
-                        F.min(c).alias(f"{c}_min_{suffix}"),
-                        F.max(c).alias(f"{c}_max_{suffix}"),
+                        F.mean(recent_value).alias(f"{c}_mean_{suffix}"),
+                        F.stddev(recent_value).alias(f"{c}_std_{suffix}"),
+                        F.min(recent_value).alias(f"{c}_min_{suffix}"),
+                        F.max(recent_value).alias(f"{c}_max_{suffix}"),
+                        F.max(F.when(F.col("_rn_desc") == 1, F.col(c))).alias(
+                            f"{c}_last_{suffix}"
+                        ),
                     ]
                 )
 
-            recent_agg = recent.groupBy(ID_COL).agg(*recent_exprs)
-
-            recent_last = (
-                recent.withColumn("_rn", F.row_number().over(latest_window))
-                .where(F.col("_rn") == 1)
-                .select(
-                    ID_COL,
-                    *[F.col(c).alias(f"{c}_last_{suffix}") for c in continuous],
-                )
-            )
-
-            frames.append(recent_agg.join(recent_last, ID_COL, "left"))
-
-        diff_df = df
         for c in continuous:
-            diff_df = diff_df.withColumn(
-                f"{c}_diff",
-                F.col(c) - F.lag(F.col(c)).over(earliest_window),
-            )
-
-        diff_exprs = []
-        for c in continuous:
-            diff_exprs.extend(
+            aggregate_exprs.extend(
                 [
                     F.mean(f"{c}_diff").alias(f"{c}_diff_mean"),
                     F.stddev(f"{c}_diff").alias(f"{c}_diff_std"),
                     F.min(f"{c}_diff").alias(f"{c}_diff_min"),
                     F.max(f"{c}_diff").alias(f"{c}_diff_max"),
+                    (F.max(F.when(F.col("_rn_desc") == 1, F.col(c))) - F.mean(c)).alias(
+                        f"{c}_last_minus_mean"
+                    ),
                 ]
             )
 
-        frames.append(diff_df.groupBy(ID_COL).agg(*diff_exprs))
-
     if categorical:
-        cat_exprs = []
         for c in categorical:
-            cat_exprs.extend(
+            aggregate_exprs.extend(
                 [
                     F.count(c).alias(f"{c}_count"),
                     F.approx_count_distinct(c).alias(f"{c}_nunique"),
+                    F.max(F.when(F.col("_rn_desc") == 1, F.col(c))).alias(f"{c}_last"),
                 ]
             )
 
-        cat_agg = df.groupBy(ID_COL).agg(*cat_exprs)
+    if not aggregate_exprs:
+        return df.select(ID_COL).distinct()
 
-        cat_last = (
-            df.withColumn("_rn", F.row_number().over(latest_window))
-            .where(F.col("_rn") == 1)
-            .select(ID_COL, *[F.col(c).alias(f"{c}_last") for c in categorical])
-        )
-
-        frames.append(cat_agg.join(cat_last, ID_COL, "left"))
-
-    return join_frames(frames)
+    return df.groupBy(ID_COL).agg(*aggregate_exprs)
