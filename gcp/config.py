@@ -33,9 +33,9 @@ ENDPOINT_TRAFFIC_PERCENTAGE = 100
 TUNING_JOB_DISPLAY_NAME = "amex-lightgbm-optuna-tuning"
 TRAINING_JOB_DISPLAY_NAME = "amex-lightgbm-training"
 TRAINING_REPLICA_COUNT = 1
-TRAINING_MACHINE_TYPE = "n2-standard-16"
+TRAINING_MACHINE_TYPE = "n2-standard-4"
 TUNING_REPLICA_COUNT = 1
-TUNING_MACHINE_TYPE = "n2-standard-16"
+TUNING_MACHINE_TYPE = "n2-standard-4"
 TUNING_N_TRIALS = 15
 TUNING_N_SPLITS = 5
 TRAINING_SHAP_SAMPLE_SIZE = 3000
@@ -92,15 +92,15 @@ FEATURE_SCRIPT = f"gs://{BUCKET}/code/gcp/spark/build_features.py"
 PY_FILES = [f"gs://{BUCKET}/code/gcp/spark/amex_default.zip"]
 
 DATAPROC_RUNTIME_PROPERTIES = {
-    "spark.executor.instances": "4",
-    "spark.driver.cores": "4",
-    "spark.executor.cores": "4",
-    "spark.driver.memory": "16g",
-    "spark.executor.memory": "16g",
-    "spark.executor.memoryOverhead": "3g",
+    "spark.executor.instances": "2",
+    "spark.driver.cores": "2",
+    "spark.executor.cores": "2",
+    "spark.driver.memory": "8g",
+    "spark.executor.memory": "8g",
+    "spark.executor.memoryOverhead": "2g",
     "spark.dataproc.driver.disk.size": "250g",
     "spark.dataproc.executor.disk.size": "250g",
-    "spark.sql.shuffle.partitions": "64",
+    "spark.sql.shuffle.partitions": "32",
 }
 
 # Pub/Sub and scheduler resources for online/automated workflows.
