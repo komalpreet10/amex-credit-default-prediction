@@ -2,23 +2,19 @@ from kfp import compiler, dsl
 
 from gcp.config import (
     BQ_LOCATION,
-    DATAPROC_RUNTIME_PROPERTIES,
     DEPLOYED_MODEL_DISPLAY_NAME,
     ENDPOINT_DISPLAY_NAME,
     ENDPOINT_MACHINE_TYPE,
     ENDPOINT_MAX_REPLICA_COUNT,
     ENDPOINT_MIN_REPLICA_COUNT,
     ENDPOINT_TRAFFIC_PERCENTAGE,
-    FEATURE_SCRIPT,
     FEATURE_TABLE,
     FEATURES,
     MODEL_ARTIFACTS,
     MODEL_DISPLAY_NAME,
     PIPELINE_ROOT,
     PREPROCESSED,
-    PREPROCESS_SCRIPT,
     PROJECT_ID,
-    PY_FILES,
     RAW_DATA,
     RAW_LABELS,
     REGION,
@@ -459,53 +455,55 @@ def amex_pipeline(
     training_image: str = TRAINING_IMAGE,
     serving_image: str = SERVING_IMAGE,
 ) -> None:
-    preprocess = submit_dataproc_pyspark_batch(
-        project=project,
-        region=region,
-        batch_id="amex-preprocess",
-        main_python_file_uri=PREPROCESS_SCRIPT,
-        py_file_uris=PY_FILES,
-        runtime_properties=DATAPROC_RUNTIME_PROPERTIES,
-        args=[
-            "--input",
-            raw_data,
-            "--output",
-            preprocessed_output,
-            "--overwrite",
-        ],
-    )
+    # Feature engineering is already materialized in BigQuery as feature_table.
+    # Keep the Dataproc steps here for a full raw-data rerun when quota allows.
+    # preprocess = submit_dataproc_pyspark_batch(
+    #     project=project,
+    #     region=region,
+    #     batch_id="amex-preprocess",
+    #     main_python_file_uri=PREPROCESS_SCRIPT,
+    #     py_file_uris=PY_FILES,
+    #     runtime_properties=DATAPROC_RUNTIME_PROPERTIES,
+    #     args=[
+    #         "--input",
+    #         raw_data,
+    #         "--output",
+    #         preprocessed_output,
+    #         "--overwrite",
+    #     ],
+    # )
 
-    build_features = submit_dataproc_pyspark_batch(
-        project=project,
-        region=region,
-        batch_id="amex-build-features",
-        main_python_file_uri=FEATURE_SCRIPT,
-        py_file_uris=PY_FILES,
-        runtime_properties=DATAPROC_RUNTIME_PROPERTIES,
-        args=[
-            "--input",
-            preprocessed_output,
-            "--labels",
-            raw_labels,
-            "--output",
-            feature_output,
-            "--overwrite",
-        ],
-    )
-    build_features.after(preprocess)
+    # build_features = submit_dataproc_pyspark_batch(
+    #     project=project,
+    #     region=region,
+    #     batch_id="amex-build-features",
+    #     main_python_file_uri=FEATURE_SCRIPT,
+    #     py_file_uris=PY_FILES,
+    #     runtime_properties=DATAPROC_RUNTIME_PROPERTIES,
+    #     args=[
+    #         "--input",
+    #         preprocessed_output,
+    #         "--labels",
+    #         raw_labels,
+    #         "--output",
+    #         feature_output,
+    #         "--overwrite",
+    #     ],
+    # )
+    # build_features.after(preprocess)
 
-    load_bq = load_features_to_bigquery(
-        project=project,
-        location=bq_location,
-        source_uri=f"{feature_output}*.parquet",
-        table=feature_table,
-    )
-    load_bq.after(build_features)
+    # load_bq = load_features_to_bigquery(
+    #     project=project,
+    #     location=bq_location,
+    #     source_uri=f"{feature_output}*.parquet",
+    #     table=feature_table,
+    # )
+    # load_bq.after(build_features)
 
     split = split_bigquery_feature_table(
         project=project,
         location=bq_location,
-        source_table=load_bq.output,
+        source_table=feature_table,
         train_table=train_feature_table,
         test_table=test_feature_table,
         train_ratio=train_ratio,
