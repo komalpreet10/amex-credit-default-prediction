@@ -93,11 +93,12 @@ PY_FILES = [f"gs://{BUCKET}/code/gcp/spark/amex_default.zip"]
 
 DATAPROC_RUNTIME_PROPERTIES = {
     "spark.executor.instances": "2",
-    "spark.driver.cores": "2",
-    "spark.executor.cores": "2",
-    "spark.driver.memory": "8g",
-    "spark.executor.memory": "8g",
-    "spark.executor.memoryOverhead": "2g",
+    "spark.driver.cores": "4",
+    "spark.executor.cores": "4",
+    "spark.driver.memory": "9600m",
+    "spark.executor.memory": "9600m",
+    "spark.dynamicAllocation.executorAllocationRatio": "0.3",
+    "spark.dataproc.scaling.version": "2",
     "spark.dataproc.driver.disk.size": "250g",
     "spark.dataproc.executor.disk.size": "250g",
     "spark.sql.shuffle.partitions": "32",
