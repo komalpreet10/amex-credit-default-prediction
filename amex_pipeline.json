@@ -41,6 +41,32 @@
         }
       }
     },
+    "comp-load-features-to-bigquery": {
+      "executorLabel": "exec-load-features-to-bigquery",
+      "inputDefinitions": {
+        "parameters": {
+          "location": {
+            "parameterType": "STRING"
+          },
+          "project": {
+            "parameterType": "STRING"
+          },
+          "source_uri": {
+            "parameterType": "STRING"
+          },
+          "table": {
+            "parameterType": "STRING"
+          }
+        }
+      },
+      "outputDefinitions": {
+        "parameters": {
+          "Output": {
+            "parameterType": "STRING"
+          }
+        }
+      }
+    },
     "comp-run-vertex-training-job": {
       "executorLabel": "exec-run-vertex-training-job",
       "inputDefinitions": {
@@ -203,6 +229,86 @@
         }
       }
     },
+    "comp-submit-dataproc-pyspark-batch": {
+      "executorLabel": "exec-submit-dataproc-pyspark-batch",
+      "inputDefinitions": {
+        "parameters": {
+          "args": {
+            "parameterType": "LIST"
+          },
+          "batch_id": {
+            "parameterType": "STRING"
+          },
+          "main_python_file_uri": {
+            "parameterType": "STRING"
+          },
+          "project": {
+            "parameterType": "STRING"
+          },
+          "py_file_uris": {
+            "parameterType": "LIST"
+          },
+          "region": {
+            "parameterType": "STRING"
+          },
+          "runtime_properties": {
+            "parameterType": "STRUCT"
+          },
+          "timeout_seconds": {
+            "defaultValue": 7200.0,
+            "isOptional": true,
+            "parameterType": "NUMBER_INTEGER"
+          }
+        }
+      },
+      "outputDefinitions": {
+        "parameters": {
+          "Output": {
+            "parameterType": "STRING"
+          }
+        }
+      }
+    },
+    "comp-submit-dataproc-pyspark-batch-2": {
+      "executorLabel": "exec-submit-dataproc-pyspark-batch-2",
+      "inputDefinitions": {
+        "parameters": {
+          "args": {
+            "parameterType": "LIST"
+          },
+          "batch_id": {
+            "parameterType": "STRING"
+          },
+          "main_python_file_uri": {
+            "parameterType": "STRING"
+          },
+          "project": {
+            "parameterType": "STRING"
+          },
+          "py_file_uris": {
+            "parameterType": "LIST"
+          },
+          "region": {
+            "parameterType": "STRING"
+          },
+          "runtime_properties": {
+            "parameterType": "STRUCT"
+          },
+          "timeout_seconds": {
+            "defaultValue": 7200.0,
+            "isOptional": true,
+            "parameterType": "NUMBER_INTEGER"
+          }
+        }
+      },
+      "outputDefinitions": {
+        "parameters": {
+          "Output": {
+            "parameterType": "STRING"
+          }
+        }
+      }
+    },
     "comp-upload-vertex-model": {
       "executorLabel": "exec-upload-vertex-model",
       "inputDefinitions": {
@@ -252,6 +358,26 @@
             "-ec",
             "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
             "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef deploy_model_to_endpoint(\n    project: str,\n    region: str,\n    model_resource_name: str,\n    endpoint_display_name: str,\n    deployed_model_display_name: str,\n    machine_type: str,\n    min_replica_count: int,\n    max_replica_count: int,\n    traffic_percentage: int,\n) -> str:\n    from google.cloud import aiplatform\n\n    aiplatform.init(project=project, location=region)\n    model = aiplatform.Model(model_resource_name)\n    endpoints = aiplatform.Endpoint.list(\n        filter=f'display_name=\"{endpoint_display_name}\"',\n        order_by=\"create_time desc\",\n    )\n    if endpoints:\n        endpoint = endpoints[0]\n    else:\n        endpoint = aiplatform.Endpoint.create(display_name=endpoint_display_name)\n    model.deploy(\n        endpoint=endpoint,\n        deployed_model_display_name=deployed_model_display_name,\n        machine_type=machine_type,\n        min_replica_count=min_replica_count,\n        max_replica_count=max_replica_count,\n        traffic_percentage=traffic_percentage,\n        sync=True,\n    )\n    return endpoint.resource_name\n\n"
+          ],
+          "image": "python:3.11"
+        }
+      },
+      "exec-load-features-to-bigquery": {
+        "container": {
+          "args": [
+            "--executor_input",
+            "{{$}}",
+            "--function_to_execute",
+            "load_features_to_bigquery"
+          ],
+          "command": [
+            "sh",
+            "-c",
+            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'google-cloud-bigquery' 'pyarrow'  &&  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.16.1' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"$0\" \"$@\"\n",
+            "sh",
+            "-ec",
+            "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef load_features_to_bigquery(\n    project: str,\n    location: str,\n    source_uri: str,\n    table: str,\n) -> str:\n    from google.cloud import bigquery\n    from google.cloud.exceptions import NotFound\n\n    client = bigquery.Client(project=project, location=location)\n    dataset_id = table.split(\".\")[-2]\n    dataset_ref = bigquery.DatasetReference(project, dataset_id)\n\n    try:\n        client.get_dataset(dataset_ref)\n    except NotFound:\n        dataset = bigquery.Dataset(dataset_ref)\n        dataset.location = location\n        client.create_dataset(dataset)\n\n    job_config = bigquery.LoadJobConfig(\n        source_format=bigquery.SourceFormat.PARQUET,\n        write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,\n    )\n    client.load_table_from_uri(\n        source_uri,\n        table,\n        job_config=job_config,\n        location=location,\n    ).result()\n    return table\n\n"
           ],
           "image": "python:3.11"
         }
@@ -312,6 +438,46 @@
             "-ec",
             "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
             "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef split_bigquery_feature_table(\n    project: str,\n    location: str,\n    source_table: str,\n    train_table: str,\n    test_table: str,\n    train_ratio: float,\n) -> str:\n    from google.cloud import bigquery\n\n    if not 0 < train_ratio < 1:\n        raise ValueError(\"train_ratio must be between 0 and 1.\")\n\n    client = bigquery.Client(project=project, location=location)\n    threshold = int(train_ratio * 100)\n    split_expr = \"MOD(ABS(FARM_FINGERPRINT(CAST(customer_ID AS STRING))), 100)\"\n    for destination, condition in (\n        (train_table, f\"{split_expr} < {threshold}\"),\n        (test_table, f\"{split_expr} >= {threshold}\"),\n    ):\n        query = f\"\"\"\n        CREATE OR REPLACE TABLE `{destination}` AS\n        SELECT *\n        FROM `{source_table}`\n        WHERE {condition}\n        \"\"\"\n        client.query(query, location=location).result()\n\n    return train_table\n\n"
+          ],
+          "image": "python:3.11"
+        }
+      },
+      "exec-submit-dataproc-pyspark-batch": {
+        "container": {
+          "args": [
+            "--executor_input",
+            "{{$}}",
+            "--function_to_execute",
+            "submit_dataproc_pyspark_batch"
+          ],
+          "command": [
+            "sh",
+            "-c",
+            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'google-cloud-dataproc'  &&  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.16.1' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"$0\" \"$@\"\n",
+            "sh",
+            "-ec",
+            "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef submit_dataproc_pyspark_batch(\n    project: str,\n    region: str,\n    batch_id: str,\n    main_python_file_uri: str,\n    py_file_uris: list[str],\n    args: list[str],\n    runtime_properties: dict[str, str],\n    timeout_seconds: int = 7200,\n) -> str:\n    import uuid\n\n    from google.cloud.dataproc_v1 import BatchControllerClient\n    from google.cloud.dataproc_v1.types import Batch, PySparkBatch, RuntimeConfig\n\n    client = BatchControllerClient(\n        client_options={\"api_endpoint\": f\"{region}-dataproc.googleapis.com:443\"}\n    )\n    parent = f\"projects/{project}/locations/{region}\"\n    batch = Batch(\n        pyspark_batch=PySparkBatch(\n            main_python_file_uri=main_python_file_uri,\n            python_file_uris=py_file_uris,\n            args=args,\n        ),\n        runtime_config=RuntimeConfig(properties=runtime_properties),\n    )\n\n    actual_batch_id = f\"{batch_id}-{uuid.uuid4().hex[:8]}\"\n    operation = client.create_batch(\n        request={\"parent\": parent, \"batch\": batch, \"batch_id\": actual_batch_id}\n    )\n    response = operation.result(timeout=timeout_seconds)\n    if response.state.name != \"SUCCEEDED\":\n        raise RuntimeError(\n            f\"Dataproc batch {actual_batch_id} ended as {response.state.name}: \"\n            f\"{response.state_message}\"\n        )\n    return response.name\n\n"
+          ],
+          "image": "python:3.11"
+        }
+      },
+      "exec-submit-dataproc-pyspark-batch-2": {
+        "container": {
+          "args": [
+            "--executor_input",
+            "{{$}}",
+            "--function_to_execute",
+            "submit_dataproc_pyspark_batch"
+          ],
+          "command": [
+            "sh",
+            "-c",
+            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'google-cloud-dataproc'  &&  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.16.1' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"$0\" \"$@\"\n",
+            "sh",
+            "-ec",
+            "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef submit_dataproc_pyspark_batch(\n    project: str,\n    region: str,\n    batch_id: str,\n    main_python_file_uri: str,\n    py_file_uris: list[str],\n    args: list[str],\n    runtime_properties: dict[str, str],\n    timeout_seconds: int = 7200,\n) -> str:\n    import uuid\n\n    from google.cloud.dataproc_v1 import BatchControllerClient\n    from google.cloud.dataproc_v1.types import Batch, PySparkBatch, RuntimeConfig\n\n    client = BatchControllerClient(\n        client_options={\"api_endpoint\": f\"{region}-dataproc.googleapis.com:443\"}\n    )\n    parent = f\"projects/{project}/locations/{region}\"\n    batch = Batch(\n        pyspark_batch=PySparkBatch(\n            main_python_file_uri=main_python_file_uri,\n            python_file_uris=py_file_uris,\n            args=args,\n        ),\n        runtime_config=RuntimeConfig(properties=runtime_properties),\n    )\n\n    actual_batch_id = f\"{batch_id}-{uuid.uuid4().hex[:8]}\"\n    operation = client.create_batch(\n        request={\"parent\": parent, \"batch\": batch, \"batch_id\": actual_batch_id}\n    )\n    response = operation.result(timeout=timeout_seconds)\n    if response.state.name != \"SUCCEEDED\":\n        raise RuntimeError(\n            f\"Dataproc batch {actual_batch_id} ended as {response.state.name}: \"\n            f\"{response.state_message}\"\n        )\n    return response.name\n\n"
           ],
           "image": "python:3.11"
         }
@@ -402,6 +568,41 @@
           },
           "taskInfo": {
             "name": "deploy-model-to-endpoint"
+          }
+        },
+        "load-features-to-bigquery": {
+          "cachingOptions": {
+            "enableCache": true
+          },
+          "componentRef": {
+            "name": "comp-load-features-to-bigquery"
+          },
+          "dependentTasks": [
+            "submit-dataproc-pyspark-batch-2"
+          ],
+          "inputs": {
+            "parameters": {
+              "location": {
+                "componentInputParameter": "bq_location"
+              },
+              "pipelinechannel--feature_output": {
+                "componentInputParameter": "feature_output"
+              },
+              "project": {
+                "componentInputParameter": "project"
+              },
+              "source_uri": {
+                "runtimeValue": {
+                  "constant": "{{$.inputs.parameters['pipelinechannel--feature_output']}}*.parquet"
+                }
+              },
+              "table": {
+                "componentInputParameter": "feature_table"
+              }
+            }
+          },
+          "taskInfo": {
+            "name": "load-features-to-bigquery"
           }
         },
         "run-vertex-training-job": {
@@ -597,6 +798,9 @@
           "componentRef": {
             "name": "comp-split-bigquery-feature-table"
           },
+          "dependentTasks": [
+            "load-features-to-bigquery"
+          ],
           "inputs": {
             "parameters": {
               "location": {
@@ -606,7 +810,10 @@
                 "componentInputParameter": "project"
               },
               "source_table": {
-                "componentInputParameter": "feature_table"
+                "taskOutputParameter": {
+                  "outputParameterKey": "Output",
+                  "producerTask": "load-features-to-bigquery"
+                }
               },
               "test_table": {
                 "componentInputParameter": "test_feature_table"
@@ -621,6 +828,154 @@
           },
           "taskInfo": {
             "name": "split-bigquery-feature-table"
+          }
+        },
+        "submit-dataproc-pyspark-batch": {
+          "cachingOptions": {
+            "enableCache": true
+          },
+          "componentRef": {
+            "name": "comp-submit-dataproc-pyspark-batch"
+          },
+          "inputs": {
+            "parameters": {
+              "args": {
+                "runtimeValue": {
+                  "constant": [
+                    "--input",
+                    "{{$.inputs.parameters['pipelinechannel--raw_data']}}",
+                    "--output",
+                    "{{$.inputs.parameters['pipelinechannel--preprocessed_output']}}",
+                    "--overwrite"
+                  ]
+                }
+              },
+              "batch_id": {
+                "runtimeValue": {
+                  "constant": "amex-preprocess"
+                }
+              },
+              "main_python_file_uri": {
+                "runtimeValue": {
+                  "constant": "gs://amex-credit-risk-ml-data/code/gcp/spark/preprocess.py"
+                }
+              },
+              "pipelinechannel--preprocessed_output": {
+                "componentInputParameter": "preprocessed_output"
+              },
+              "pipelinechannel--raw_data": {
+                "componentInputParameter": "raw_data"
+              },
+              "project": {
+                "componentInputParameter": "project"
+              },
+              "py_file_uris": {
+                "runtimeValue": {
+                  "constant": [
+                    "gs://amex-credit-risk-ml-data/code/gcp/spark/amex_default.zip"
+                  ]
+                }
+              },
+              "region": {
+                "componentInputParameter": "region"
+              },
+              "runtime_properties": {
+                "runtimeValue": {
+                  "constant": {
+                    "spark.dataproc.driver.disk.size": "250g",
+                    "spark.dataproc.executor.disk.size": "250g",
+                    "spark.driver.cores": "4",
+                    "spark.driver.memory": "16g",
+                    "spark.executor.cores": "4",
+                    "spark.executor.instances": "2",
+                    "spark.executor.memory": "16g",
+                    "spark.executor.memoryOverhead": "2g",
+                    "spark.sql.shuffle.partitions": "32"
+                  }
+                }
+              }
+            }
+          },
+          "taskInfo": {
+            "name": "submit-dataproc-pyspark-batch"
+          }
+        },
+        "submit-dataproc-pyspark-batch-2": {
+          "cachingOptions": {
+            "enableCache": true
+          },
+          "componentRef": {
+            "name": "comp-submit-dataproc-pyspark-batch-2"
+          },
+          "dependentTasks": [
+            "submit-dataproc-pyspark-batch"
+          ],
+          "inputs": {
+            "parameters": {
+              "args": {
+                "runtimeValue": {
+                  "constant": [
+                    "--input",
+                    "{{$.inputs.parameters['pipelinechannel--preprocessed_output']}}",
+                    "--labels",
+                    "{{$.inputs.parameters['pipelinechannel--raw_labels']}}",
+                    "--output",
+                    "{{$.inputs.parameters['pipelinechannel--feature_output']}}",
+                    "--overwrite"
+                  ]
+                }
+              },
+              "batch_id": {
+                "runtimeValue": {
+                  "constant": "amex-build-features"
+                }
+              },
+              "main_python_file_uri": {
+                "runtimeValue": {
+                  "constant": "gs://amex-credit-risk-ml-data/code/gcp/spark/build_features.py"
+                }
+              },
+              "pipelinechannel--feature_output": {
+                "componentInputParameter": "feature_output"
+              },
+              "pipelinechannel--preprocessed_output": {
+                "componentInputParameter": "preprocessed_output"
+              },
+              "pipelinechannel--raw_labels": {
+                "componentInputParameter": "raw_labels"
+              },
+              "project": {
+                "componentInputParameter": "project"
+              },
+              "py_file_uris": {
+                "runtimeValue": {
+                  "constant": [
+                    "gs://amex-credit-risk-ml-data/code/gcp/spark/amex_default.zip"
+                  ]
+                }
+              },
+              "region": {
+                "componentInputParameter": "region"
+              },
+              "runtime_properties": {
+                "runtimeValue": {
+                  "constant": {
+                    "spark.dataproc.driver.disk.size": "250g",
+                    "spark.dataproc.executor.disk.size": "250g",
+                    "spark.driver.cores": "4",
+                    "spark.driver.memory": "16g",
+                    "spark.executor.cores": "4",
+                    "spark.executor.instances": "2",
+                    "spark.executor.memory": "16g",
+                    "spark.executor.memoryOverhead": "2g",
+                    "spark.sql.shuffle.partitions": "32"
+                  }
+                }
+              }
+            }
+          },
+          "taskInfo": {
+            "name": "submit-dataproc-pyspark-batch-2"
           }
         },
         "upload-vertex-model": {
