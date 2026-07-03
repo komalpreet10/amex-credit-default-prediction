@@ -36,7 +36,6 @@ from gcp.config import (
     TUNING_ARTIFACTS,
 )
 
-
 PIP_ROOT_USER_OPTION = "--root-user-action=ignore"
 
 
