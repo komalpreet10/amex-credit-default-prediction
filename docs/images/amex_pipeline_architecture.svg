@@ -1,86 +1,94 @@
-<svg width="100%" viewBox="0 0 680 590" xmlns="http://www.w3.org/2000/svg" role="img" style="font-family: system-ui, sans-serif;">
-<title>AmEx Credit Default Prediction — GCP Pipeline Architecture</title>
-<desc>Batch credit default prediction pipeline on GCP: monthly statement cycle closes triggers Pub/Sub, which kicks off PySpark feature engineering on Dataproc, stores features in BigQuery, trains LightGBM and XGBoost via Vertex AI with Optuna and MLflow, then serves predictions through a Cloud Function with three-tier routing.</desc>
-<defs>
-  <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-    <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-  </marker>
-</defs>
+<svg width="900" viewBox="0 0 900 340" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }</style>
+    <marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="#888780" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
 
-<!-- 1. Trigger -->
-<g>
-  <rect x="230" y="30" width="220" height="44" rx="8" fill="#D3D1C7" stroke="#5F5E5A" stroke-width="0.5"/>
-  <text x="340" y="52" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#2C2C2A">Statement cycle closes</text>
-</g>
+  <!-- Lane labels -->
+  <text x="90" y="58" text-anchor="end" font-size="11" font-weight="600" fill="#0F6E56">Training</text>
+  <text x="90" y="164" text-anchor="end" font-size="11" font-weight="600" fill="#993C1D">Inference</text>
+  <text x="90" y="270" text-anchor="end" font-size="11" font-weight="600" fill="#BA7517">Streaming</text>
 
-<line x1="340" y1="74" x2="340" y2="94" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <!-- ── TRAINING ROW ── -->
 
-<!-- 2. Pub/Sub -->
-<g>
-  <rect x="230" y="96" width="220" height="56" rx="8" fill="#FAC775" stroke="#BA7517" stroke-width="0.5"/>
-  <text x="340" y="114" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#412402">Cloud Pub/Sub</text>
-  <text x="340" y="134" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#633806">Event-driven batch trigger</text>
-</g>
+  <!-- GCS -->
+  <rect x="100" y="30" width="110" height="56" rx="8" fill="#F1EFE8" stroke="#888780" stroke-width="0.5"/>
+  <text x="155" y="48" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#2C2C2A">GCS</text>
+  <text x="155" y="68" text-anchor="middle" dominant-baseline="central" font-size="11" fill="#5F5E5A">raw data</text>
+  <line x1="210" y1="58" x2="222" y2="58" stroke="#888780" stroke-width="1" marker-end="url(#a)"/>
 
-<line x1="340" y1="152" x2="340" y2="172" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <!-- Dataproc -->
+  <rect x="222" y="30" width="110" height="56" rx="8" fill="#9FE1CB" stroke="#0F6E56" stroke-width="0.5"/>
+  <text x="277" y="48" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#04342C">Dataproc</text>
+  <text x="277" y="68" text-anchor="middle" dominant-baseline="central" font-size="11" fill="#085041">Serverless</text>
+  <line x1="332" y1="58" x2="344" y2="58" stroke="#888780" stroke-width="1" marker-end="url(#a)"/>
 
-<!-- 3. Dataproc -->
-<g>
-  <rect x="230" y="174" width="220" height="56" rx="8" fill="#9FE1CB" stroke="#0F6E56" stroke-width="0.5"/>
-  <text x="340" y="192" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#04342C">Dataproc Serverless</text>
-  <text x="340" y="212" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#085041">PySpark feature engineering</text>
-</g>
+  <!-- BigQuery -->
+  <rect x="344" y="30" width="110" height="56" rx="8" fill="#B5D4F4" stroke="#185FA5" stroke-width="0.5"/>
+  <text x="399" y="48" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#042C53">BigQuery</text>
+  <text x="399" y="68" text-anchor="middle" dominant-baseline="central" font-size="11" fill="#0C447C">features</text>
+  <line x1="454" y1="58" x2="466" y2="58" stroke="#888780" stroke-width="1" marker-end="url(#a)"/>
 
-<line x1="340" y1="230" x2="340" y2="250" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <!-- Vertex AI Pipeline -->
+  <rect x="466" y="30" width="110" height="56" rx="8" fill="#CECBF6" stroke="#534AB7" stroke-width="0.5"/>
+  <text x="521" y="48" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#26215C">Vertex AI</text>
+  <text x="521" y="68" text-anchor="middle" dominant-baseline="central" font-size="11" fill="#3C3489">Pipeline</text>
+  <line x1="576" y1="58" x2="588" y2="58" stroke="#888780" stroke-width="1" marker-end="url(#a)"/>
 
-<!-- 4. BigQuery -->
-<g>
-  <rect x="230" y="252" width="220" height="56" rx="8" fill="#B5D4F4" stroke="#185FA5" stroke-width="0.5"/>
-  <text x="340" y="270" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#042C53">BigQuery</text>
-  <text x="340" y="290" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#0C447C">Feature + data warehouse</text>
-</g>
+  <!-- Model Registry -->
+  <rect x="588" y="30" width="110" height="56" rx="8" fill="#CECBF6" stroke="#534AB7" stroke-width="0.5"/>
+  <text x="643" y="48" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#26215C">Registry</text>
+  <text x="643" y="68" text-anchor="middle" dominant-baseline="central" font-size="11" fill="#3C3489">model store</text>
+  <line x1="698" y1="58" x2="710" y2="58" stroke="#888780" stroke-width="1" marker-end="url(#a)"/>
 
-<line x1="340" y1="308" x2="340" y2="328" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <!-- Endpoint -->
+  <rect x="710" y="30" width="110" height="56" rx="8" fill="#F5C4B3" stroke="#993C1D" stroke-width="0.5"/>
+  <text x="765" y="48" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#4A1B0C">Endpoint</text>
+  <text x="765" y="68" text-anchor="middle" dominant-baseline="central" font-size="11" fill="#712B13">serving</text>
 
-<!-- 5. Vertex AI -->
-<g>
-  <rect x="230" y="330" width="220" height="56" rx="8" fill="#CECBF6" stroke="#534AB7" stroke-width="0.5"/>
-  <text x="340" y="348" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#26215C">Vertex AI Pipeline</text>
-  <text x="340" y="368" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#3C3489">Optuna · LightGBM · MLflow</text>
-</g>
+  <!-- ── INFERENCE ROW ── -->
 
-<line x1="340" y1="386" x2="340" y2="406" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <!-- Cloud Function -->
+  <rect x="100" y="136" width="110" height="56" rx="8" fill="#F5C4B3" stroke="#993C1D" stroke-width="0.5"/>
+  <text x="155" y="154" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#4A1B0C">Cloud</text>
+  <text x="155" y="174" text-anchor="middle" dominant-baseline="central" font-size="11" fill="#712B13">Function</text>
+  <line x1="210" y1="164" x2="222" y2="164" stroke="#888780" stroke-width="1" marker-end="url(#a)"/>
 
-<!-- 6. Cloud Function -->
-<g>
-  <rect x="230" y="408" width="220" height="56" rx="8" fill="#F5C4B3" stroke="#993C1D" stroke-width="0.5"/>
-  <text x="340" y="426" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#4A1B0C">Cloud Function</text>
-  <text x="340" y="446" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#712B13">Tiered inference routing</text>
-</g>
+  <!-- Redis cache -->
+  <rect x="222" y="136" width="110" height="56" rx="8" fill="#9FE1CB" stroke="#0F6E56" stroke-width="0.5"/>
+  <text x="277" y="154" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#04342C">Redis</text>
+  <text x="277" y="174" text-anchor="middle" dominant-baseline="central" font-size="11" fill="#085041">cache</text>
+  <line x1="332" y1="164" x2="344" y2="164" stroke="#888780" stroke-width="1" marker-end="url(#a)"/>
 
-<!-- Branch arrows from Cloud Function -->
-<path d="M340 464 L340 478 L150 478 L150 494" fill="none" stroke="#888780" stroke-width="1" marker-end="url(#arrow)"/>
-<line x1="340" y1="464" x2="340" y2="494" stroke="#888780" stroke-width="1" marker-end="url(#arrow)"/>
-<path d="M340 464 L340 478 L530 478 L530 494" fill="none" stroke="#888780" stroke-width="1" marker-end="url(#arrow)"/>
+  <!-- BigQuery fallback -->
+  <rect x="344" y="136" width="110" height="56" rx="8" fill="#B5D4F4" stroke="#185FA5" stroke-width="0.5"/>
+  <text x="399" y="154" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#042C53">BigQuery</text>
+  <text x="399" y="174" text-anchor="middle" dominant-baseline="central" font-size="11" fill="#0C447C">fallback</text>
+  <line x1="454" y1="164" x2="466" y2="164" stroke="#888780" stroke-width="1" marker-end="url(#a)"/>
 
-<!-- 7a. Redis cache -->
-<g>
-  <rect x="65" y="494" width="170" height="56" rx="8" fill="#9FE1CB" stroke="#0F6E56" stroke-width="0.5"/>
-  <text x="150" y="512" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#04342C">Redis cache</text>
-  <text x="150" y="532" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#085041">Feature store hit</text>
-</g>
+  <!-- Vertex AI Endpoint -->
+  <rect x="466" y="136" width="110" height="56" rx="8" fill="#CECBF6" stroke="#534AB7" stroke-width="0.5"/>
+  <text x="521" y="154" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#26215C">Vertex AI</text>
+  <text x="521" y="174" text-anchor="middle" dominant-baseline="central" font-size="11" fill="#3C3489">Endpoint</text>
 
-<!-- 7b. BigQuery fallback -->
-<g>
-  <rect x="255" y="494" width="170" height="56" rx="8" fill="#B5D4F4" stroke="#185FA5" stroke-width="0.5"/>
-  <text x="340" y="512" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#042C53">BigQuery fallback</text>
-  <text x="340" y="532" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#0C447C">Cold path query</text>
-</g>
+  <!-- ── STREAMING ROW ── -->
 
-<!-- 7c. No prediction -->
-<g>
-  <rect x="445" y="494" width="170" height="56" rx="8" fill="#D3D1C7" stroke="#5F5E5A" stroke-width="0.5"/>
-  <text x="530" y="512" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#2C2C2A">No prediction</text>
-  <text x="530" y="532" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#444441">Insufficient data</text>
-</g>
+  <!-- Pub/Sub -->
+  <rect x="100" y="242" width="110" height="56" rx="8" fill="#FAC775" stroke="#BA7517" stroke-width="0.5"/>
+  <text x="155" y="260" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#412402">Pub/Sub</text>
+  <text x="155" y="280" text-anchor="middle" dominant-baseline="central" font-size="11" fill="#633806">cycle close</text>
+  <line x1="210" y1="270" x2="222" y2="270" stroke="#888780" stroke-width="1" marker-end="url(#a)"/>
+
+  <!-- Dataflow -->
+  <rect x="222" y="242" width="110" height="56" rx="8" fill="#9FE1CB" stroke="#0F6E56" stroke-width="0.5"/>
+  <text x="277" y="260" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#04342C">Dataflow</text>
+  <text x="277" y="280" text-anchor="middle" dominant-baseline="central" font-size="11" fill="#085041">streaming</text>
+  <line x1="332" y1="270" x2="344" y2="270" stroke="#888780" stroke-width="1" marker-end="url(#a)"/>
+
+  <!-- Redis refresh -->
+  <rect x="344" y="242" width="110" height="56" rx="8" fill="#9FE1CB" stroke="#0F6E56" stroke-width="0.5"/>
+  <text x="399" y="260" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#04342C">Redis</text>
+  <text x="399" y="280" text-anchor="middle" dominant-baseline="central" font-size="11" fill="#085041">refresh</text>
 </svg>
