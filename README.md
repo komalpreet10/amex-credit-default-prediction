@@ -4,7 +4,7 @@ End-to-end credit default prediction pipeline on GCP using monthly AmEx statemen
 
 ## Highlights
 - Orchestrated distributed feature engineering, hyperparameter tuning, model training, and real-time inference across monthly statement cycles.
-- Engineered 3,400+ behavioral, temporal, and statistical aggregations (22+ per numeric feature) across delinquency, spend, payment, balance, and risk variables.
+- Engineered 22+ behavioral, temporal, and statistical aggregations across delinquency, spend, payment, balance, and risk variables; optimized a LightGBM model via Optuna with stratified cross-validation, achieving a 0.959 ROC-AUC and 0.894 PR-AUC on imbalanced data.
 - Tuned LightGBM via Optuna with 5-fold stratified CV, achieving **0.959 ROC-AUC / 0.894 PR-AUC** on imbalanced data.
 - Added SHAP explainability and PSI drift monitoring; tracked runs with MLflow.
 - Built a three-tier real-time inference path: **Redis** (online cache) → **BigQuery** (fallback lookup) → **Vertex AI Endpoint** (serving), with streaming feature refresh via Pub/Sub + Dataflow on each statement cycle close.
@@ -17,7 +17,6 @@ End-to-end credit default prediction pipeline on GCP using monthly AmEx statemen
 | XGBoost | 229,456 | 3,418 | 0.9597 | 0.8948 | 0.8079 |
 
 ## Architecture
-![AmEx Credit Default Prediction — GCP Pipeline Architecture](docs/images/amex_pipeline_architecture.svg)
 
 ```text
 Training:   GCS → Dataproc Serverless (feature eng.) → BigQuery → Vertex AI Pipeline
