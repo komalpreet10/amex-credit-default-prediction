@@ -3,6 +3,7 @@ FROM python:3.11-slim
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app/src:/app
 ENV MPLCONFIGDIR=/tmp/matplotlib
+ENV PIP_ROOT_USER_ACTION=ignore
 
 WORKDIR /app
 

@@ -36,10 +36,13 @@ from gcp.config import (
     TUNING_ARTIFACTS,
 )
 
+PIP_ROOT_USER_OPTION = "--root-user-action=ignore"
+
 
 @dsl.component(
     base_image="python:3.11",
-    packages_to_install=["google-cloud-dataproc"],
+    packages_to_install=["google-cloud-dataproc", PIP_ROOT_USER_OPTION],
+    use_venv=True,
 )
 def submit_dataproc_pyspark_batch(
     project: str,
@@ -84,7 +87,8 @@ def submit_dataproc_pyspark_batch(
 
 @dsl.component(
     base_image="python:3.11",
-    packages_to_install=["google-cloud-bigquery", "pyarrow"],
+    packages_to_install=["google-cloud-bigquery", "pyarrow", PIP_ROOT_USER_OPTION],
+    use_venv=True,
 )
 def load_features_to_bigquery(
     project: str,
@@ -121,7 +125,8 @@ def load_features_to_bigquery(
 
 @dsl.component(
     base_image="python:3.11",
-    packages_to_install=["google-cloud-bigquery"],
+    packages_to_install=["google-cloud-bigquery", PIP_ROOT_USER_OPTION],
+    use_venv=True,
 )
 def split_bigquery_feature_table(
     project: str,
@@ -156,7 +161,8 @@ def split_bigquery_feature_table(
 
 @dsl.component(
     base_image="python:3.11",
-    packages_to_install=["google-cloud-aiplatform"],
+    packages_to_install=["google-cloud-aiplatform", PIP_ROOT_USER_OPTION],
+    use_venv=True,
 )
 def run_vertex_tuning_job(
     project: str,
@@ -214,7 +220,8 @@ def run_vertex_tuning_job(
 
 @dsl.component(
     base_image="python:3.11",
-    packages_to_install=["google-cloud-aiplatform"],
+    packages_to_install=["google-cloud-aiplatform", PIP_ROOT_USER_OPTION],
+    use_venv=True,
 )
 def run_vertex_training_job(
     project: str,
@@ -284,7 +291,8 @@ def run_vertex_training_job(
 
 @dsl.component(
     base_image="python:3.11",
-    packages_to_install=["google-cloud-aiplatform"],
+    packages_to_install=["google-cloud-aiplatform", PIP_ROOT_USER_OPTION],
+    use_venv=True,
 )
 def upload_vertex_model(
     project: str,
@@ -317,7 +325,8 @@ def upload_vertex_model(
 
 @dsl.component(
     base_image="python:3.11",
-    packages_to_install=["google-cloud-aiplatform"],
+    packages_to_install=["google-cloud-aiplatform", PIP_ROOT_USER_OPTION],
+    use_venv=True,
 )
 def deploy_model_to_endpoint(
     project: str,
@@ -362,7 +371,9 @@ def deploy_model_to_endpoint(
         "numpy",
         "pandas",
         "pyarrow",
+        PIP_ROOT_USER_OPTION,
     ],
+    use_venv=True,
 )
 def compute_feature_drift(
     project: str,
