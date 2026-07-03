@@ -17,6 +17,7 @@ End-to-end credit default prediction pipeline on GCP using monthly AmEx statemen
 | XGBoost | 229,456 | 3,418 | 0.9597 | 0.8948 | 0.8079 |
 
 ## Architecture
+![AmEx Credit Default Prediction — GCP Pipeline Architecture](docs/amex_pipeline_architecture.svg)
 
 ```text
 Training:   GCS → Dataproc Serverless (feature eng.) → BigQuery → Vertex AI Pipeline
