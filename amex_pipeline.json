@@ -441,7 +441,7 @@
               },
               "machine_type": {
                 "runtimeValue": {
-                  "constant": "n2-highmem-4"
+                  "constant": "n2-highmem-8"
                 }
               },
               "max_rows": {
@@ -534,7 +534,7 @@
               },
               "machine_type": {
                 "runtimeValue": {
-                  "constant": "n2-highmem-4"
+                  "constant": "n2-highmem-8"
                 }
               },
               "max_rows": {
