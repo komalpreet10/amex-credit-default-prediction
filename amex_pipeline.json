@@ -112,65 +112,6 @@
         }
       }
     },
-    "comp-run-vertex-tuning-job": {
-      "executorLabel": "exec-run-vertex-tuning-job",
-      "inputDefinitions": {
-        "parameters": {
-          "balanced_smoke_sample": {
-            "parameterType": "BOOLEAN"
-          },
-          "display_name": {
-            "parameterType": "STRING"
-          },
-          "early_stopping_rounds": {
-            "parameterType": "NUMBER_INTEGER"
-          },
-          "machine_type": {
-            "parameterType": "STRING"
-          },
-          "max_rows": {
-            "parameterType": "NUMBER_INTEGER"
-          },
-          "metric": {
-            "parameterType": "STRING"
-          },
-          "n_splits": {
-            "parameterType": "NUMBER_INTEGER"
-          },
-          "n_trials": {
-            "parameterType": "NUMBER_INTEGER"
-          },
-          "num_boost_round": {
-            "parameterType": "NUMBER_INTEGER"
-          },
-          "output_dir": {
-            "parameterType": "STRING"
-          },
-          "project": {
-            "parameterType": "STRING"
-          },
-          "region": {
-            "parameterType": "STRING"
-          },
-          "replica_count": {
-            "parameterType": "NUMBER_INTEGER"
-          },
-          "table": {
-            "parameterType": "STRING"
-          },
-          "training_image": {
-            "parameterType": "STRING"
-          }
-        }
-      },
-      "outputDefinitions": {
-        "parameters": {
-          "Output": {
-            "parameterType": "STRING"
-          }
-        }
-      }
-    },
     "comp-split-bigquery-feature-table": {
       "executorLabel": "exec-split-bigquery-feature-table",
       "inputDefinitions": {
@@ -272,26 +213,6 @@
             "-ec",
             "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
             "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef run_vertex_training_job(\n    project: str,\n    region: str,\n    training_image: str,\n    table: str,\n    eval_table: str,\n    output_dir: str,\n    params_uri: str,\n    display_name: str,\n    shap_sample_size: int,\n    shap_max_display: int,\n    max_rows: int,\n    balanced_smoke_sample: bool,\n    selector_num_boost_round: int,\n    final_num_boost_round: int,\n    min_selected_features: int,\n    max_selected_features: int,\n    disable_shap: bool,\n    replica_count: int,\n    machine_type: str,\n) -> str:\n    from google.cloud import aiplatform\n\n    aiplatform.init(project=project, location=region, staging_bucket=output_dir)\n    job = aiplatform.CustomContainerTrainingJob(\n        display_name=display_name,\n        container_uri=training_image,\n        command=[\"python\", \"gcp/vertex/train.py\"],\n    )\n    job_args = [\n        \"--table\",\n        table,\n        \"--eval-table\",\n        eval_table,\n        \"--params-uri\",\n        params_uri,\n        \"--output-dir\",\n        output_dir,\n        \"--selector-num-boost-round\",\n        str(selector_num_boost_round),\n        \"--final-num-boost-round\",\n        str(final_num_boost_round),\n        \"--min-selected-features\",\n        str(min_selected_features),\n        \"--max-selected-features\",\n        str(max_selected_features),\n        \"--shap-sample-size\",\n        str(shap_sample_size),\n        \"--shap-max-display\",\n        str(shap_max_display),\n    ]\n    if max_rows > 0:\n        job_args.extend([\"--max-rows\", str(max_rows)])\n    if balanced_smoke_sample:\n        job_args.append(\"--balanced-smoke-sample\")\n    if disable_shap:\n        job_args.append(\"--disable-shap\")\n    model = job.run(\n        args=job_args,\n        replica_count=replica_count,\n        machine_type=machine_type,\n        sync=True,\n    )\n    return model.resource_name if model else output_dir\n\n"
-          ],
-          "image": "python:3.11"
-        }
-      },
-      "exec-run-vertex-tuning-job": {
-        "container": {
-          "args": [
-            "--executor_input",
-            "{{$}}",
-            "--function_to_execute",
-            "run_vertex_tuning_job"
-          ],
-          "command": [
-            "sh",
-            "-c",
-            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'google-cloud-aiplatform' '--root-user-action=ignore'  &&  \nexport PIP_DISABLE_PIP_VERSION_CHECK=1\ntmp=$(mktemp -d)\npython3 -m venv \"$tmp/venv\" --system-site-packages\n. \"$tmp/venv/bin/activate\"\n python3 -m pip install --quiet --no-warn-script-location 'kfp==2.16.1' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"$0\" \"$@\"\n",
-            "sh",
-            "-ec",
-            "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
-            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef run_vertex_tuning_job(\n    project: str,\n    region: str,\n    training_image: str,\n    table: str,\n    output_dir: str,\n    display_name: str,\n    metric: str,\n    n_trials: int,\n    n_splits: int,\n    num_boost_round: int,\n    early_stopping_rounds: int,\n    max_rows: int,\n    balanced_smoke_sample: bool,\n    replica_count: int,\n    machine_type: str,\n) -> str:\n    from google.cloud import aiplatform\n\n    aiplatform.init(project=project, location=region, staging_bucket=output_dir)\n    job = aiplatform.CustomContainerTrainingJob(\n        display_name=display_name,\n        container_uri=training_image,\n        command=[\"python\", \"gcp/vertex/tune_lightgbm_optuna.py\"],\n    )\n    job_args = [\n        \"--table\",\n        table,\n        \"--metric\",\n        metric,\n        \"--n-trials\",\n        str(n_trials),\n        \"--n-splits\",\n        str(n_splits),\n        \"--num-boost-round\",\n        str(num_boost_round),\n        \"--early-stopping-rounds\",\n        str(early_stopping_rounds),\n        \"--output-dir\",\n        output_dir,\n    ]\n    if max_rows > 0:\n        job_args.extend([\"--max-rows\", str(max_rows)])\n    if balanced_smoke_sample:\n        job_args.append(\"--balanced-smoke-sample\")\n    job.run(\n        args=job_args,\n        replica_count=replica_count,\n        machine_type=machine_type,\n        sync=True,\n    )\n    return f\"{output_dir.rstrip('/')}/lightgbm_optuna_best_params.json\"\n\n"
           ],
           "image": "python:3.11"
         }
@@ -412,7 +333,7 @@
             "name": "comp-run-vertex-training-job"
           },
           "dependentTasks": [
-            "run-vertex-tuning-job"
+            "split-bigquery-feature-table"
           ],
           "inputs": {
             "parameters": {
@@ -503,91 +424,6 @@
           },
           "taskInfo": {
             "name": "run-vertex-training-job"
-          }
-        },
-        "run-vertex-tuning-job": {
-          "cachingOptions": {
-            "enableCache": true
-          },
-          "componentRef": {
-            "name": "comp-run-vertex-tuning-job"
-          },
-          "dependentTasks": [
-            "split-bigquery-feature-table"
-          ],
-          "inputs": {
-            "parameters": {
-              "balanced_smoke_sample": {
-                "runtimeValue": {
-                  "constant": false
-                }
-              },
-              "display_name": {
-                "runtimeValue": {
-                  "constant": "amex-lightgbm-optuna-tuning"
-                }
-              },
-              "early_stopping_rounds": {
-                "runtimeValue": {
-                  "constant": 50.0
-                }
-              },
-              "machine_type": {
-                "runtimeValue": {
-                  "constant": "n2-highmem-8"
-                }
-              },
-              "max_rows": {
-                "runtimeValue": {
-                  "constant": 0.0
-                }
-              },
-              "metric": {
-                "runtimeValue": {
-                  "constant": "pr_auc"
-                }
-              },
-              "n_splits": {
-                "runtimeValue": {
-                  "constant": 5.0
-                }
-              },
-              "n_trials": {
-                "runtimeValue": {
-                  "constant": 15.0
-                }
-              },
-              "num_boost_round": {
-                "runtimeValue": {
-                  "constant": 700.0
-                }
-              },
-              "output_dir": {
-                "runtimeValue": {
-                  "constant": "gs://amex-credit-risk-ml-data/models/lightgbm/tuning/"
-                }
-              },
-              "project": {
-                "componentInputParameter": "project"
-              },
-              "region": {
-                "componentInputParameter": "region"
-              },
-              "replica_count": {
-                "runtimeValue": {
-                  "constant": 1.0
-                }
-              },
-              "table": {
-                "componentInputParameter": "train_feature_table"
-              },
-              "training_image": {
-                "componentInputParameter": "training_image"
-              }
-            }
-          },
-          "taskInfo": {
-            "name": "run-vertex-tuning-job"
           }
         },
         "split-bigquery-feature-table": {
