@@ -27,13 +27,7 @@ from gcp.config import (
     TRAINING_SHAP_SAMPLE_SIZE,
     TRAINING_IMAGE,
     TRAIN_FEATURE_TABLE,
-    TUNING_JOB_DISPLAY_NAME,
-    TUNING_MACHINE_TYPE,
     TUNED_PARAMS_URI,
-    TUNING_N_SPLITS,
-    TUNING_N_TRIALS,
-    TUNING_REPLICA_COUNT,
-    TUNING_ARTIFACTS,
 )
 
 PIP_ROOT_USER_OPTION = "--root-user-action=ignore"
@@ -541,25 +535,7 @@ def amex_pipeline(
         replica_count=TRAINING_REPLICA_COUNT,
         machine_type=TRAINING_MACHINE_TYPE,
     )
-    tuning = run_vertex_tuning_job(
-        project=project,
-        region=region,
-        training_image=training_image,
-        table=train_feature_table,
-        output_dir=TUNING_ARTIFACTS,
-        display_name=TUNING_JOB_DISPLAY_NAME,
-        metric="pr_auc",
-        n_trials=TUNING_N_TRIALS,
-        n_splits=TUNING_N_SPLITS,
-        num_boost_round=700,
-        early_stopping_rounds=50,
-        max_rows=0,
-        balanced_smoke_sample=False,
-        replica_count=TUNING_REPLICA_COUNT,
-        machine_type=TUNING_MACHINE_TYPE,
-    )
-    tuning.after(split)
-    training.after(tuning)
+    training.after(split)
 
     model = upload_vertex_model(
         project=project,
