@@ -16,14 +16,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--project", default=PROJECT_ID)
     parser.add_argument("--location", default=REGION)
     parser.add_argument("--output-dir", default=DEPLOYMENT_CONFIG_DIR)
-    parser.add_argument("--redis-host", default=os.environ.get("REDIS_HOST"))
-    parser.add_argument("--redis-ca-cert-file", default=None)
     parser.add_argument(
         "--vertex-endpoint-id", default=os.environ.get("VERTEX_ENDPOINT_ID")
     )
     parser.add_argument("--skip-monitoring", action="store_true")
     parser.add_argument("--skip-inference", action="store_true")
-    parser.add_argument("--run-redis-refresh", action="store_true")
     return parser.parse_args()
 
 
@@ -40,12 +37,6 @@ def main() -> None:
     serving_image = os.environ.get("SERVING_IMAGE_URI")
     if not serving_image:
         raise RuntimeError("SERVING_IMAGE_URI environment variable is required.")
-    if not args.skip_inference and not args.redis_host:
-        raise RuntimeError(
-            "--redis-host or REDIS_HOST is required for inference deploy."
-        )
-    if not args.skip_inference and not args.redis_ca_cert_file:
-        raise RuntimeError("--redis-ca-cert-file is required for inference deploy.")
     if not args.skip_inference and not args.vertex_endpoint_id:
         raise RuntimeError(
             "--vertex-endpoint-id or VERTEX_ENDPOINT_ID is required for inference deploy."
@@ -53,68 +44,47 @@ def main() -> None:
 
     steps = [
         (
-            "setup_vpc_connector",
+            "deploy_model",
             [
                 python,
-                "deployment/setup_vpc_connector.py",
+                "deployment/deploy_model.py",
                 "--project",
                 args.project,
-                "--region",
+                "--location",
+                args.location,
+                "--output-dir",
+                args.output_dir,
+                "--serving-image",
+                serving_image,
+            ],
+        ),
+        (
+            "setup_pubsub",
+            [python, "deployment/setup_pubsub.py", "--project", args.project],
+        ),
+        (
+            "setup_scheduler",
+            [
+                python,
+                "deployment/setup_scheduler.py",
+                "--project",
+                args.project,
+                "--location",
+                args.location,
+            ],
+        ),
+        (
+            "setup_feature_store",
+            [
+                python,
+                "deployment/setup_feature_store.py",
+                "--project",
+                args.project,
+                "--location",
                 args.location,
             ],
         ),
     ]
-    if args.redis_ca_cert_file:
-        steps.append(
-            (
-                "setup_redis_ca_secret",
-                [
-                    python,
-                    "deployment/setup_redis_ca_secret.py",
-                    "--project",
-                    args.project,
-                    "--cert-file",
-                    args.redis_ca_cert_file,
-                ],
-            )
-        )
-
-    steps.extend(
-        [
-            (
-                "deploy_model",
-                [
-                    python,
-                    "deployment/deploy_model.py",
-                    "--project",
-                    args.project,
-                    "--location",
-                    args.location,
-                    "--output-dir",
-                    args.output_dir,
-                    "--serving-image",
-                    serving_image,
-                ],
-            ),
-            (
-                "setup_pubsub",
-                [python, "deployment/setup_pubsub.py", "--project", args.project],
-            ),
-            (
-                "setup_scheduler",
-                [
-                    python,
-                    "deployment/setup_scheduler.py",
-                    "--project",
-                    args.project,
-                    "--location",
-                    args.location,
-                ],
-            ),
-        ]
-    )
-    if args.run_redis_refresh:
-        steps.insert(2, ("refresh_redis", [python, "deployment/refresh_redis.py"]))
 
     if not args.skip_inference:
         steps.append(
@@ -127,8 +97,6 @@ def main() -> None:
                     args.project,
                     "--region",
                     args.location,
-                    "--redis-host",
-                    args.redis_host,
                     "--vertex-endpoint-id",
                     args.vertex_endpoint_id,
                 ],

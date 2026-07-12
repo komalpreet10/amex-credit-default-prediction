@@ -1,13 +1,15 @@
 # American Express Credit Default Prediction
 
-End-to-end credit default prediction pipeline on GCP using monthly AmEx statement data — from distributed feature engineering through real-time inference.
+End-to-end credit default prediction project using monthly American Express statement data. The project combines PySpark feature engineering, BigQuery feature storage, Optuna-tuned LightGBM training, SHAP explainability, PSI drift monitoring, and a GCP statement-cycle inference path with Pub/Sub, Dataproc Serverless, Vertex AI Feature Store, Cloud Functions, and Vertex AI Endpoints.
 
 ## Highlights
-- Orchestrated distributed feature engineering, hyperparameter tuning, model training, and real-time inference across monthly statement cycles.
+
+- Designed and deployed an end-to-end credit default prediction pipeline on GCP, orchestrating distributed feature engineering, hyperparameter tuning, model training, and statement-cycle inference across monthly statement updates.
 - Engineered 22+ behavioral, temporal, and statistical aggregations across delinquency, spend, payment, balance, and risk variables; optimized a LightGBM model via Optuna with stratified cross-validation, achieving a 0.959 ROC-AUC and 0.894 PR-AUC on imbalanced data.
-- Tuned LightGBM via Optuna with 5-fold stratified CV, achieving **0.959 ROC-AUC / 0.894 PR-AUC** on imbalanced data.
-- Added SHAP explainability and PSI drift monitoring; tracked runs with MLflow.
-- Built a three-tier real-time inference path: **Redis** (online cache) → **BigQuery** (fallback lookup) → **Vertex AI Endpoint** (serving), with streaming feature refresh via Pub/Sub + Dataflow on each statement cycle close.
+- Logged model runs, metrics, and artifacts using MLflow, and implemented SHAP-based model explainability and Population Stability Index (PSI) analysis to interpret model predictions and assess potential feature drift.
+- Built a statement-cycle inference pipeline where new monthly statement data triggers affected-customer PySpark feature refresh, BigQuery serving feature updates, Vertex AI Feature Store lookup, and Vertex AI Endpoint scoring.
+
+
 
 ## Results
 
@@ -17,26 +19,114 @@ End-to-end credit default prediction pipeline on GCP using monthly AmEx statemen
 | XGBoost | 229,456 | 3,418 | 0.9597 | 0.8948 | 0.8079 |
 
 ## Architecture
-![AmEx Credit Default Prediction — GCP Pipeline Architecture](docs/images/amex_pipeline_architecture.svg)
+
+![Statement-cycle inference architecture](docs/images/statement_cycle_inference_architecture.svg)
+
 ```text
 Training:   GCS → Dataproc Serverless (feature eng.) → BigQuery → Vertex AI Pipeline
             (Optuna + 5-fold CV → LightGBM) → Model Registry → Endpoint
 
-Inference:  Cloud Function → Redis cache → BigQuery fallback → Vertex AI Endpoint
+Statement-Cycle Inference
 
-Streaming:  Pub/Sub (statement cycle close) → Dataflow → Redis feature refresh
+New monthly statements -> BigQuery raw_monthly_statements_amex
+        |
+        v
+Pub/Sub statement-cycle trigger
+        |
+        v
+Dataproc Serverless PySpark affected-customer feature refresh
+        |
+        v
+BigQuery refreshed customer features -> Vertex AI Feature Store
+        |
+        v
+Cloud Function -> Vertex AI Endpoint -> default probability
 ```
 
-## Stack
-Python · PySpark · LightGBM · XGBoost · Optuna · SHAP · MLflow · BigQuery · Dataproc Serverless · Vertex AI (Pipelines, Endpoints) · Cloud Functions · Pub/Sub · Dataflow · Memorystore Redis
+## Repository Layout
+
+```text
+app/                 Local FastAPI demo
+deployment/          GCP deployment and infrastructure scripts
+inference/           Cloud Function online scoring entrypoint
+gcp/                 Vertex pipeline, Spark jobs, serving, feature refresh, monitoring
+streaming/           Pub/Sub/Dataflow experimental streaming utilities
+src/amex_default/    Reusable feature engineering, training, evaluation utilities
+notebooks/           EDA, training, comparison, SHAP, MLflow, API demo
+docker/              Training and serving Dockerfiles
+docs/images/         README plots
+```
+
+## Key GCP Resources
+
+```text
+Project:          amex-credit-risk-ml
+Region:           us-central1
+Bucket:           gs://amex-credit-risk-ml-data/
+Feature table:    amex-credit-risk-ml.amex_ml.train_features
+Train split:      amex-credit-risk-ml.amex_ml.train_features_train
+Test split:       amex-credit-risk-ml.amex_ml.train_features_test
+Serving features: amex-credit-risk-ml.amex_ml.customer_features_current
+Model artifacts:  gs://amex-credit-risk-ml-data/models/lightgbm/
+Tuning artifacts: gs://amex-credit-risk-ml-data/models/lightgbm/tuning/
+Endpoint:         amex-credit-default-endpoint
+Feature store:    amex_credit_default_feature_store
+Feature view:     customer_features_current
+```
+
+## Pipeline Outputs
+
+```text
+models/lightgbm/
+  model.txt
+  metrics.json
+  selected_feature_list.json
+  full_feature_list.json
+  feature_importance.csv
+  plots/test_roc_curve.png
+  plots/test_pr_curve.png
+  mlruns/
+
+models/lightgbm/tuning/
+  lightgbm_optuna_best_params.json
+  lightgbm_optuna_trials.csv
+  cv_metrics.json
+  plots/cv_roc_curve.png
+  plots/cv_pr_curve.png
+```
 
 ## Run
 
-```bash
-python -m gcp.pipeline                          # compile Vertex AI pipeline
-bash gcp/redis/provision_memorystore.sh          # provision Redis
-REDIS_HOST=<host> python deployment/refresh_redis.py   # refresh cache
+Compile the Vertex AI pipeline:
 
-SERVING_IMAGE_URI=<image> REDIS_HOST=<host> ALERT_EMAIL=<email> \
-python deployment/run_deployment.py              # deploy online stack
+```bash
+python -m gcp.pipeline
 ```
+
+Run an affected-customer statement-cycle feature refresh:
+
+```bash
+gcloud dataproc batches submit pyspark gcp/spark/refresh_selected_features.py \
+  --project=amex-credit-risk-ml \
+  --region=us-central1 \
+  --deps-bucket=gs://amex-credit-risk-ml-data \
+  --py-files=gcp/spark/amex_default.zip \
+  -- \
+  --raw-table=amex-credit-risk-ml.amex_ml.raw_monthly_statements_amex \
+  --changed-customers-table=amex-credit-risk-ml.amex_ml.changed_customers_statement_cycle \
+  --feature-table=amex-credit-risk-ml.amex_ml.customer_features_current \
+  --staging-table=amex-credit-risk-ml.amex_ml.customer_features_current_refresh_staging \
+  --selected-features-uri=gs://amex-credit-risk-ml-data/models/lightgbm/selected_feature_list.json
+```
+
+Deploy the online stack:
+
+```bash
+SERVING_IMAGE_URI=<artifact-registry-serving-image> \
+ALERT_EMAIL=<email> \
+python deployment/run_deployment.py
+```
+
+## Tech Stack
+
+Python, PySpark, Pandas, NumPy, Scikit-learn, LightGBM, XGBoost, Optuna, SHAP, MLflow, FastAPI, BigQuery, GCS, Dataproc Serverless, Vertex AI Pipelines, Vertex AI Feature Store, Vertex AI Endpoints, Cloud Functions, Pub/Sub, and Dataflow.
