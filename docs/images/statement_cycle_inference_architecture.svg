@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <defs>
+    <style>
+      .box{fill:#fff;stroke:#d9dee7;stroke-width:1.4;filter:url(#shadow)}
+      .dash{fill:#fff;stroke:#2b78e4;stroke-width:1.5;stroke-dasharray:6 5}
+      .title{font:600 15px Arial,sans-serif;fill:#2f3b4a}
+      .sub{font:12px Arial,sans-serif;fill:#6b7280}
+      .note{font:12px Arial,sans-serif;fill:#5f6b7a}
+      .line{stroke:#2b78e4;stroke-width:1.8;fill:none}
+      .dline{stroke:#2b78e4;stroke-width:1.8;fill:none;stroke-dasharray:6 5}
+      .icon{stroke:#5a95f5;stroke-width:3;fill:none;stroke-linecap:round;stroke-linejoin:round}
+      .fill{fill:#5a95f5}
+    </style>
+    <filter id="shadow" x="-15%" y="-15%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000" flood-opacity=".11"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0 10 5 0 10z" fill="#2b78e4"/>
+    </marker>
+  </defs>
+
+  <rect width="1280" height="720" fill="#fff"/>
+
+  <!-- Inputs -->
+  <rect class="box" x="45" y="145" width="235" height="70"/>
+  <circle class="icon" cx="78" cy="180" r="15"/>
+  <path class="icon" d="M89 191l10 10"/>
+  <text class="title" x="118" y="172">Raw monthly statements</text>
+  <text class="sub" x="118" y="193">BigQuery</text>
+
+  <rect class="box" x="45" y="275" width="235" height="70"/>
+  <circle class="icon" cx="78" cy="310" r="15"/>
+  <path class="icon" d="M89 321l10 10"/>
+  <text class="title" x="118" y="302">Changed customers</text>
+  <text class="sub" x="118" y="323">BigQuery</text>
+
+  <rect class="box" x="45" y="405" width="235" height="70"/>
+  <path class="icon" d="M70 427h32M70 441h32M70 455h32"/>
+  <text class="title" x="118" y="432">Selected features</text>
+  <text class="sub" x="118" y="453">Cloud Storage</text>
+
+  <!-- Trigger -->
+  <rect class="box" x="420" y="80" width="220" height="70"/>
+  <circle class="icon" cx="455" cy="115" r="5"/>
+  <circle class="icon" cx="478" cy="101" r="5"/>
+  <circle class="icon" cx="478" cy="129" r="5"/>
+  <path class="icon" d="M460 113l13-9M460 118l13 9"/>
+  <text class="title" x="505" y="107">Statement trigger</text>
+  <text class="sub" x="505" y="128">Cloud Pub/Sub</text>
+
+  <!-- Refresh group -->
+  <rect class="dash" x="405" y="235" width="320" height="170"/>
+  <path class="icon" d="M455 286v42M434 307h42M441 293l28 28M469 293l-28 28"/>
+  <text class="title" x="500" y="290">Feature refresh</text>
+  <text class="sub" x="500" y="312">Dataproc PySpark</text>
+  <text class="sub" x="500" y="333">selected columns only</text>
+
+  <!-- Stores -->
+  <rect class="box" x="850" y="205" width="235" height="70"/>
+  <circle class="icon" cx="883" cy="240" r="15"/>
+  <path class="icon" d="M894 251l10 10"/>
+  <text class="title" x="923" y="232">Refreshed features</text>
+  <text class="sub" x="923" y="253">BigQuery</text>
+
+  <rect class="box" x="850" y="335" width="235" height="70"/>
+  <circle class="icon" cx="883" cy="370" r="15"/>
+  <path class="icon" d="M894 381l10 10"/>
+  <text class="title" x="923" y="362">Feature Store</text>
+  <text class="sub" x="923" y="383">Vertex AI</text>
+
+  <!-- Inference -->
+  <rect class="box" x="430" y="545" width="220" height="70"/>
+  <path class="icon" d="M465 570h28M465 584h28M465 598h28"/>
+  <text class="title" x="515" y="572">Inference API</text>
+  <text class="sub" x="515" y="593">Cloud Function</text>
+
+  <rect class="box" x="850" y="545" width="235" height="70"/>
+  <circle class="icon" cx="885" cy="580" r="18"/>
+  <path class="icon" d="M885 562v36M867 580h36M873 568l24 24M897 568l-24 24"/>
+  <text class="title" x="923" y="572">Hosted model</text>
+  <text class="sub" x="923" y="593">Vertex AI Endpoint</text>
+
+  <!-- Arrows -->
+  <path class="dline" d="M280 180c70 0 70-65 140-65" marker-end="url(#arrow)"/>
+  <path class="line" d="M280 180h125" marker-end="url(#arrow)"/>
+  <path class="line" d="M280 310h125" marker-end="url(#arrow)"/>
+  <path class="line" d="M280 440c80 0 80-90 125-90" marker-end="url(#arrow)"/>
+  <path class="line" d="M530 150v85" marker-end="url(#arrow)"/>
+  <text class="note" x="548" y="195">trigger</text>
+
+  <path class="line" d="M725 320c55 0 55-80 125-80" marker-end="url(#arrow)"/>
+  <text class="note" x="760" y="265">write</text>
+  <path class="line" d="M968 275v60" marker-end="url(#arrow)"/>
+  <text class="note" x="982" y="310">sync</text>
+
+  <path class="dline" d="M540 545c0-120 310-95 310-175" marker-end="url(#arrow)"/>
+  <text class="note" x="645" y="450">lookup</text>
+  <path class="line" d="M650 580h200" marker-end="url(#arrow)"/>
+  <text class="note" x="720" y="565">request</text>
+  <path class="dline" d="M850 600H650" marker-end="url(#arrow)"/>
+  <text class="note" x="720" y="622">response</text>
+</svg>

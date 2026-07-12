@@ -13,7 +13,12 @@ _DIFF_AGG_STATS = ("mean", "std", "min", "max")
 
 
 def _strip_feature_suffix(feature_name: str) -> str | None:
-    for suffix in ("_lag", "_first"):
+    for suffix in ("_lag", "_first", "_last_minus_mean"):
+        if feature_name.endswith(suffix):
+            return feature_name[: -len(suffix)]
+
+    for stat in _DIFF_AGG_STATS:
+        suffix = f"_diff_{stat}"
         if feature_name.endswith(suffix):
             return feature_name[: -len(suffix)]
 
@@ -96,7 +101,7 @@ def build_customer_features(
     """Build the customer-level feature matrix used by model training.
 
     This mirrors notebooks/02_feature_engineering.ipynb: full-history numeric
-    aggregations, categorical aggregations, lag, first, 3M, 6M, and diff features.
+    aggregations, categorical aggregations, first, 3M, 6M, and diff features.
     """
     df, continuous, categorical = _prepare_statement_frame(
         statements,
@@ -121,15 +126,15 @@ def build_customer_features(
         frames.append(cat_agg.reset_index())
 
     if continuous:
-        lag_features = {
-            f"{col}_lag": df_agg[f"{col}_last"] - df_agg[f"{col}_mean"]
+        last_minus_mean_features = {
+            f"{col}_last_minus_mean": df_agg[f"{col}_last"] - df_agg[f"{col}_mean"]
             for col in continuous
         }
-        lag_df = pd.concat(
-            [df_agg[[ID_COL]], pd.DataFrame(lag_features)],
+        last_minus_mean_df = pd.concat(
+            [df_agg[[ID_COL]], pd.DataFrame(last_minus_mean_features)],
             axis=1,
         )
-        frames.append(lag_df)
+        frames.append(last_minus_mean_df)
 
         first_df = df.groupby(ID_COL)[continuous].first()
         first_df.columns = [f"{col}_first" for col in first_df.columns]
@@ -156,7 +161,7 @@ def build_customer_features(
             axis=1,
         )
         diff_agg = diff_df.groupby(ID_COL).agg(_DIFF_AGG_STATS)
-        diff_agg.columns = ["_".join(col) + "_diff" for col in diff_agg.columns]
+        diff_agg.columns = [f"{col[0]}_diff_{col[1]}" for col in diff_agg.columns]
         frames.append(diff_agg.reset_index())
 
     feature_frame = frames[0]

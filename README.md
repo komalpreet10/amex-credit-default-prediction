@@ -1,13 +1,13 @@
 # American Express Credit Default Prediction
 
-End-to-end credit default prediction project using monthly American Express statement data. The project combines PySpark feature engineering, BigQuery feature storage, Optuna-tuned LightGBM training, SHAP explainability, PSI drift monitoring, and a GCP online inference path with Vertex AI, Cloud Functions, Redis, Pub/Sub, and Dataflow.
+End-to-end credit default prediction project using monthly American Express statement data. The project combines PySpark feature engineering, BigQuery feature storage, Optuna-tuned LightGBM training, SHAP explainability, PSI drift monitoring, and a GCP statement-cycle inference path with Pub/Sub, Dataproc Serverless, Vertex AI Feature Store, Cloud Functions, and Vertex AI Endpoints.
 
 ## Highlights
 
-- Designed and deployed an end-to-end credit default prediction pipeline on GCP, orchestrating distributed feature engineering, hyperparameter tuning, model training, and real-time inference across monthly statement cycles.
+- Designed and deployed an end-to-end credit default prediction pipeline on GCP, orchestrating distributed feature engineering, hyperparameter tuning, model training, and statement-cycle inference across monthly statement updates.
 - Engineered 22+ behavioral, temporal, and statistical aggregations across delinquency, spend, payment, balance, and risk variables; optimized a LightGBM model via Optuna with stratified cross-validation, achieving a 0.959 ROC-AUC and 0.894 PR-AUC on imbalanced data.
 - Logged model runs, metrics, and artifacts using MLflow, and implemented SHAP-based model explainability and Population Stability Index (PSI) analysis to interpret model predictions and assess potential feature drift.
-- Built a three-tier real-time inference pipeline using Redis as an online feature store, BigQuery as a fallback lookup, and Vertex AI Endpoint for model serving, with streaming feature updates via Pub/Sub and Dataflow on each statement cycle close.
+- Built a statement-cycle inference pipeline where new monthly statement data triggers affected-customer PySpark feature refresh, BigQuery serving feature updates, Vertex AI Feature Store lookup, and Vertex AI Endpoint scoring.
 
 
 
@@ -27,6 +27,8 @@ The Vertex workflow uses Optuna 5-fold stratified cross-validation for tuning an
 ![LightGBM precision recall curve](docs/images/lightgbm_pr_curve.png)
 
 ## Architecture
+
+![Statement-cycle inference architecture](docs/images/statement_cycle_inference_architecture.svg)
 
 ```text
 Training / MLOps
@@ -53,29 +55,21 @@ GCS model artifacts + metrics + SHAP
 Vertex AI Model Registry -> Vertex AI Endpoint
 
 
-Online Inference
+Statement-Cycle Inference
 
-Cloud Function: score(customer_ID)
-        |
-        +--> Tier 1: Redis feature cache
-        |
-        +--> Tier 2: BigQuery feature lookup + Redis write-through
-        |
-        +--> Tier 3: insufficient data response
+New monthly statements -> BigQuery raw_monthly_statements_amex
         |
         v
-Vertex AI Endpoint -> default probability
-
-
-Streaming Refresh
-
-Pub/Sub statement-cycle-close
+Pub/Sub statement-cycle trigger
         |
         v
-Dataflow streaming job
+Dataproc Serverless PySpark affected-customer feature refresh
         |
         v
-Incremental Redis feature update
+BigQuery refreshed customer features -> Vertex AI Feature Store
+        |
+        v
+Cloud Function -> Vertex AI Endpoint -> default probability
 ```
 
 ## Repository Layout
@@ -84,8 +78,8 @@ Incremental Redis feature update
 app/                 Local FastAPI demo
 deployment/          GCP deployment and infrastructure scripts
 inference/           Cloud Function online scoring entrypoint
-gcp/                 Vertex pipeline, Spark jobs, serving, Redis, monitoring
-streaming/           Dataflow streaming feature-refresh job
+gcp/                 Vertex pipeline, Spark jobs, serving, feature refresh, monitoring
+streaming/           Pub/Sub/Dataflow experimental streaming utilities
 src/amex_default/    Reusable feature engineering, training, evaluation utilities
 notebooks/           EDA, training, comparison, SHAP, MLflow, API demo
 docker/              Training and serving Dockerfiles
@@ -104,7 +98,7 @@ Test split:       amex-credit-risk-ml.amex_ml.train_features_test
 Model artifacts:  gs://amex-credit-risk-ml-data/models/lightgbm/
 Tuning artifacts: gs://amex-credit-risk-ml-data/models/lightgbm/tuning/
 Endpoint:         amex-credit-default-endpoint
-Redis:            amex-feature-cache
+Feature store:    Vertex AI Feature Store
 ```
 
 ## Pipeline Outputs

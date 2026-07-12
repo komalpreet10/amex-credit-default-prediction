@@ -20,6 +20,14 @@ DATASET = "amex_ml"
 FEATURE_TABLE_ID = "train_features"
 TRAIN_FEATURE_TABLE_ID = "train_features_train"
 TEST_FEATURE_TABLE_ID = "train_features_test"
+STATEMENT_HISTORY_TABLE_ID = os.getenv(
+    "STATEMENT_HISTORY_TABLE_ID",
+    "raw_monthly_statements_amex",
+)
+CHANGED_CUSTOMERS_TABLE_ID = os.getenv(
+    "CHANGED_CUSTOMERS_TABLE_ID",
+    "changed_customers_statement_cycle",
+)
 DRIFT_TABLE_ID = "drift_metrics"
 MODEL_DISPLAY_NAME = "amex-lightgbm-credit-default"
 ENDPOINT_DISPLAY_NAME = "amex-credit-default-endpoint"
@@ -73,6 +81,8 @@ FEATURES_PARQUET_URI = f"{FEATURES}*.parquet"
 FEATURE_TABLE = f"{PROJECT_ID}.{DATASET}.{FEATURE_TABLE_ID}"
 TRAIN_FEATURE_TABLE = f"{PROJECT_ID}.{DATASET}.{TRAIN_FEATURE_TABLE_ID}"
 TEST_FEATURE_TABLE = f"{PROJECT_ID}.{DATASET}.{TEST_FEATURE_TABLE_ID}"
+STATEMENT_HISTORY_TABLE = f"{PROJECT_ID}.{DATASET}.{STATEMENT_HISTORY_TABLE_ID}"
+CHANGED_CUSTOMERS_TABLE = f"{PROJECT_ID}.{DATASET}.{CHANGED_CUSTOMERS_TABLE_ID}"
 DRIFT_TABLE = f"{PROJECT_ID}.{DATASET}.{DRIFT_TABLE_ID}"
 
 # Model, tuning, monitoring, and deployment artifacts.
@@ -89,6 +99,7 @@ INFERENCE_FUNCTION_NAME = "amex-credit-default-score"
 # Dataproc Serverless Spark jobs for full feature-engineering reruns.
 PREPROCESS_SCRIPT = f"gs://{BUCKET}/code/gcp/spark/preprocess.py"
 FEATURE_SCRIPT = f"gs://{BUCKET}/code/gcp/spark/build_features.py"
+FEATURE_REFRESH_SCRIPT = f"gs://{BUCKET}/code/gcp/spark/refresh_selected_features.py"
 PY_FILES = [f"gs://{BUCKET}/code/gcp/spark/amex_default.zip"]
 
 DATAPROC_RUNTIME_PROPERTIES = {

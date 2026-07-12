@@ -3,14 +3,18 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import math
 import time
 from typing import Any
 
 import apache_beam as beam
+import pandas as pd
 import redis
 from apache_beam.options.pipeline_options import PipelineOptions, StandardOptions
-from google.cloud import pubsub_v1, storage
+from google.cloud import bigquery, pubsub_v1, storage
 
+from amex_default.config import DATE_COL, ID_COL
+from amex_default.features import build_customer_features, infer_continuous_features
 from amex_default.redis_config import redis_ssl_ca_certs
 from gcp.config import (
     PROJECT_ID,
@@ -19,9 +23,10 @@ from gcp.config import (
     REDIS_SSL_ENABLED,
     REDIS_NETWORK,
     REGION,
+    SELECTED_FEATURES_URI,
     STATEMENT_DLQ_TOPIC,
+    STATEMENT_HISTORY_TABLE,
     STATEMENT_SUBSCRIPTION_PATH,
-    STREAMING_FEATURES_URI,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -32,7 +37,8 @@ def parse_args() -> tuple[argparse.Namespace, list[str]]:
     parser.add_argument("--project", default=PROJECT_ID)
     parser.add_argument("--region", default=REGION)
     parser.add_argument("--redis-host", required=True)
-    parser.add_argument("--streaming-features-uri", default=STREAMING_FEATURES_URI)
+    parser.add_argument("--selected-features-uri", default=SELECTED_FEATURES_URI)
+    parser.add_argument("--statement-history-table", default=STATEMENT_HISTORY_TABLE)
     parser.add_argument("--subscription", default=STATEMENT_SUBSCRIPTION_PATH)
     parser.add_argument("--network", default=REDIS_NETWORK)
     parser.add_argument("--subnetwork", default=None)
@@ -50,37 +56,36 @@ def read_gcs_json(uri: str) -> Any:
     return json.loads(payload)
 
 
-def resolve_feature_updates(
-    raw_statement_fields: dict[str, Any],
-    feature_config: Any,
-) -> dict[str, Any]:
-    updates = {}
-    if isinstance(feature_config, list):
-        for feature in feature_config:
-            if feature in raw_statement_fields:
-                updates[feature] = raw_statement_fields[feature]
-        return updates
-
-    if isinstance(feature_config, dict):
-        for feature, source in feature_config.items():
-            if isinstance(source, str):
-                raw_key = source
-            elif isinstance(source, dict):
-                raw_key = source.get("source", feature)
-            else:
-                raw_key = feature
-            if raw_key in raw_statement_fields:
-                updates[feature] = raw_statement_fields[raw_key]
-    return updates
+def quote_identifier(name: str) -> str:
+    return f"`{name.replace('`', '')}`"
 
 
-class UpdateRedisFeatures(beam.DoFn):
-    def __init__(self, redis_host: str, streaming_features_uri: str, project: str):
+def to_json_value(value: Any) -> Any:
+    if pd.isna(value):
+        return 0.0
+    if hasattr(value, "item"):
+        value = value.item()
+    if isinstance(value, float) and not math.isfinite(value):
+        return 0.0
+    return value
+
+
+class RebuildRedisFeatures(beam.DoFn):
+    def __init__(
+        self,
+        redis_host: str,
+        selected_features_uri: str,
+        statement_history_table: str,
+        project: str,
+    ):
         self.redis_host = redis_host
-        self.streaming_features_uri = streaming_features_uri
+        self.selected_features_uri = selected_features_uri
+        self.statement_history_table = statement_history_table
         self.project = project
         self.redis_client = None
-        self.feature_config = None
+        self.bq_client = None
+        self.selected_features = None
+        self.continuous_features = None
         self.publisher = None
         self.dlq_topic_path = None
 
@@ -94,7 +99,12 @@ class UpdateRedisFeatures(beam.DoFn):
             ssl_ca_certs=redis_ssl_ca_certs(),
         )
         self.redis_client.ping()
-        self.feature_config = read_gcs_json(self.streaming_features_uri)
+        self.bq_client = bigquery.Client(project=self.project)
+        self.selected_features = read_gcs_json(self.selected_features_uri)
+        if not isinstance(self.selected_features, list) or not self.selected_features:
+            raise ValueError("Selected feature list must be a non-empty JSON list.")
+        self.selected_features = [str(feature) for feature in self.selected_features]
+        self.continuous_features = infer_continuous_features(self.selected_features)
         self.publisher = pubsub_v1.PublisherClient()
         self.dlq_topic_path = self.publisher.topic_path(
             self.project, STATEMENT_DLQ_TOPIC
@@ -112,6 +122,72 @@ class UpdateRedisFeatures(beam.DoFn):
             error=str(error),
         )
 
+    def read_statement_history(
+        self,
+        customer_id: str,
+        raw_statement_fields: dict[str, Any],
+    ) -> pd.DataFrame:
+        if self.bq_client is None:
+            raise RuntimeError("BigQuery client is not initialized.")
+
+        query = (
+            f"SELECT * FROM `{self.statement_history_table}` "
+            f"WHERE {quote_identifier(ID_COL)} = @customer_id "
+            f"ORDER BY {quote_identifier(DATE_COL)}"
+        )
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("customer_id", "STRING", customer_id)
+            ]
+        )
+        rows = [
+            dict(row.items())
+            for row in self.bq_client.query(query, job_config=job_config).result()
+        ]
+
+        event_row = {**raw_statement_fields, ID_COL: customer_id}
+        if DATE_COL in event_row and not self.history_contains_event(rows, event_row):
+            rows.append(event_row)
+
+        if not rows:
+            raise ValueError(f"No statement history found for customer_ID={customer_id}.")
+        return pd.DataFrame(rows)
+
+    def history_contains_event(
+        self,
+        rows: list[dict[str, Any]],
+        event_row: dict[str, Any],
+    ) -> bool:
+        event_date = event_row.get(DATE_COL)
+        if event_date is None:
+            return False
+        return any(str(row.get(DATE_COL)) == str(event_date) for row in rows)
+
+    def rebuild_feature_vector(
+        self,
+        customer_id: str,
+        raw_statement_fields: dict[str, Any],
+    ) -> dict[str, Any]:
+        if self.selected_features is None or self.continuous_features is None:
+            raise RuntimeError("Feature metadata is not initialized.")
+
+        statements = self.read_statement_history(customer_id, raw_statement_fields)
+        engineered = build_customer_features(
+            statements,
+            continuous_features=self.continuous_features,
+        )
+        if len(engineered) != 1:
+            raise ValueError(
+                f"Expected one engineered row for customer_ID={customer_id}, "
+                f"got {len(engineered)}."
+            )
+
+        row = engineered.iloc[0].to_dict()
+        return {
+            feature: to_json_value(row.get(feature, 0.0))
+            for feature in self.selected_features
+        }
+
     def process(self, message: bytes):
         customer_id = None
         for attempt in range(1, 4):
@@ -127,10 +203,9 @@ class UpdateRedisFeatures(beam.DoFn):
                     raise ValueError("raw_statement_fields must be a dictionary.")
 
                 key = f"features:{customer_id}"
-                existing = self.redis_client.get(key)
-                feature_vector = json.loads(existing) if existing else {}
-                feature_vector.update(
-                    resolve_feature_updates(raw_statement_fields, self.feature_config)
+                feature_vector = self.rebuild_feature_vector(
+                    customer_id,
+                    raw_statement_fields,
                 )
                 self.redis_client.setex(
                     key,
@@ -174,11 +249,12 @@ def main() -> None:
         (
             pipeline
             | "Read PubSub" >> beam.io.ReadFromPubSub(subscription=args.subscription)
-            | "Update Redis Features"
+            | "Rebuild Redis Features"
             >> beam.ParDo(
-                UpdateRedisFeatures(
+                RebuildRedisFeatures(
                     redis_host=args.redis_host,
-                    streaming_features_uri=args.streaming_features_uri,
+                    selected_features_uri=args.selected_features_uri,
+                    statement_history_table=args.statement_history_table,
                     project=args.project,
                 )
             )

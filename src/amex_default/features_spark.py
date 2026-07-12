@@ -11,7 +11,16 @@ def infer_continuous_features(
     categorical_features: Sequence[str] = CATEGORICAL_FEATURES,
 ) -> list[str]:
     excluded = {ID_COL, TARGET_COL, DATE_COL, *categorical_features}
-    numeric_types = ("float", "double", "decimal")
+    numeric_types = (
+        "float",
+        "double",
+        "decimal",
+        "int",
+        "bigint",
+        "long",
+        "smallint",
+        "tinyint",
+    )
 
     return [
         field.name
