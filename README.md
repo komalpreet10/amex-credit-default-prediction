@@ -13,47 +13,18 @@ End-to-end credit default prediction project using monthly American Express stat
 
 ## Results
 
-| Model | Rows | Features | ROC-AUC | PR-AUC | Precision | Recall | F1 |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| LightGBM | 229,456 | 3,418 | 0.9593 | 0.8938 | 0.8104 | 0.8059 | 0.8081 |
-| XGBoost | 229,456 | 3,418 | 0.9597 | 0.8948 | 0.8124 | 0.8035 | 0.8079 |
-
-The Vertex workflow uses Optuna 5-fold stratified cross-validation for tuning and evaluation, then trains one final LightGBM model on the selected feature subset.
-
-## Evaluation
-
-![LightGBM ROC curve](docs/images/lightgbm_roc_curve.png)
-
-![LightGBM precision recall curve](docs/images/lightgbm_pr_curve.png)
+| Model | Rows | Features | ROC-AUC | PR-AUC | F1 |
+|---|---:|---:|---:|---:|---:|
+| LightGBM | 229,456 | 3,418 | 0.9593 | 0.8938 | 0.8081 |
+| XGBoost | 229,456 | 3,418 | 0.9597 | 0.8948 | 0.8079 |
 
 ## Architecture
 
 ![Statement-cycle inference architecture](docs/images/statement_cycle_inference_architecture.svg)
 
 ```text
-Training / MLOps
-
-Raw AMEX CSVs in GCS
-        |
-        v
-Dataproc Serverless PySpark preprocessing + feature engineering
-        |
-        v
-BigQuery train_features
-        |
-        v
-Vertex AI Pipeline
-        |
-        +--> Optuna + 5-fold stratified CV
-        |
-        +--> Final LightGBM training + feature selection
-        |
-        v
-GCS model artifacts + metrics + SHAP
-        |
-        v
-Vertex AI Model Registry -> Vertex AI Endpoint
-
+Training:   GCS → Dataproc Serverless (feature eng.) → BigQuery → Vertex AI Pipeline
+            (Optuna + 5-fold CV → LightGBM) → Model Registry → Endpoint
 
 Statement-Cycle Inference
 
@@ -124,33 +95,11 @@ models/lightgbm/tuning/
 
 ## Run
 
-Compile the Vertex AI pipeline:
-
 ```bash
-python -m gcp.pipeline
+python -m gcp.pipeline                          # compile Vertex AI pipeline
+bash gcp/redis/provision_memorystore.sh          # provision Redis
+REDIS_HOST=<host> python deployment/refresh_redis.py   # refresh cache
+
+SERVING_IMAGE_URI=<image> REDIS_HOST=<host> ALERT_EMAIL=<email> \
+python deployment/run_deployment.py              # deploy online stack
 ```
-
-Provision Redis:
-
-```bash
-bash gcp/redis/provision_memorystore.sh
-```
-
-Refresh Redis feature cache:
-
-```bash
-REDIS_HOST=<memorystore-host> python deployment/refresh_redis.py
-```
-
-Deploy the online stack:
-
-```bash
-SERVING_IMAGE_URI=<artifact-registry-serving-image> \
-REDIS_HOST=<memorystore-host> \
-ALERT_EMAIL=<email> \
-python deployment/run_deployment.py
-```
-
-## Tech Stack
-
-Python, PySpark, Pandas, NumPy, Scikit-learn, LightGBM, XGBoost, Optuna, SHAP, MLflow, FastAPI, BigQuery, GCS, Dataproc Serverless, Vertex AI Pipelines, Vertex AI Endpoints, Cloud Functions, Pub/Sub, Dataflow, Memorystore Redis.
