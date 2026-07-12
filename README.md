@@ -66,10 +66,12 @@ Bucket:           gs://amex-credit-risk-ml-data/
 Feature table:    amex-credit-risk-ml.amex_ml.train_features
 Train split:      amex-credit-risk-ml.amex_ml.train_features_train
 Test split:       amex-credit-risk-ml.amex_ml.train_features_test
+Serving features: amex-credit-risk-ml.amex_ml.customer_features_current
 Model artifacts:  gs://amex-credit-risk-ml-data/models/lightgbm/
 Tuning artifacts: gs://amex-credit-risk-ml-data/models/lightgbm/tuning/
 Endpoint:         amex-credit-default-endpoint
-Feature store:    Vertex AI Feature Store
+Feature store:    amex_credit_default_feature_store
+Feature view:     customer_features_current
 ```
 
 ## Pipeline Outputs
@@ -95,11 +97,36 @@ models/lightgbm/tuning/
 
 ## Run
 
-```bash
-python -m gcp.pipeline                          # compile Vertex AI pipeline
-bash gcp/redis/provision_memorystore.sh          # provision Redis
-REDIS_HOST=<host> python deployment/refresh_redis.py   # refresh cache
+Compile the Vertex AI pipeline:
 
-SERVING_IMAGE_URI=<image> REDIS_HOST=<host> ALERT_EMAIL=<email> \
-python deployment/run_deployment.py              # deploy online stack
+```bash
+python -m gcp.pipeline
 ```
+
+Run an affected-customer statement-cycle feature refresh:
+
+```bash
+gcloud dataproc batches submit pyspark gcp/spark/refresh_selected_features.py \
+  --project=amex-credit-risk-ml \
+  --region=us-central1 \
+  --deps-bucket=gs://amex-credit-risk-ml-data \
+  --py-files=gcp/spark/amex_default.zip \
+  -- \
+  --raw-table=amex-credit-risk-ml.amex_ml.raw_monthly_statements_amex \
+  --changed-customers-table=amex-credit-risk-ml.amex_ml.changed_customers_statement_cycle \
+  --feature-table=amex-credit-risk-ml.amex_ml.customer_features_current \
+  --staging-table=amex-credit-risk-ml.amex_ml.customer_features_current_refresh_staging \
+  --selected-features-uri=gs://amex-credit-risk-ml-data/models/lightgbm/selected_feature_list.json
+```
+
+Deploy the online stack:
+
+```bash
+SERVING_IMAGE_URI=<artifact-registry-serving-image> \
+ALERT_EMAIL=<email> \
+python deployment/run_deployment.py
+```
+
+## Tech Stack
+
+Python, PySpark, Pandas, NumPy, Scikit-learn, LightGBM, XGBoost, Optuna, SHAP, MLflow, FastAPI, BigQuery, GCS, Dataproc Serverless, Vertex AI Pipelines, Vertex AI Feature Store, Vertex AI Endpoints, Cloud Functions, Pub/Sub, and Dataflow.

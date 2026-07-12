@@ -88,12 +88,13 @@ Input tables:
 ```text
 raw statements:      amex-credit-risk-ml.amex_ml.raw_monthly_statements_amex
 changed customers:  amex-credit-risk-ml.amex_ml.changed_customers_statement_cycle
-serving features:   amex-credit-risk-ml.amex_ml.train_features
+serving features:   amex-credit-risk-ml.amex_ml.customer_features_current
 ```
 
 The refresh job loads `selected_feature_list.json`, infers the raw columns needed
 for those selected engineered features, recomputes features only for affected
-customers, merges the refreshed rows into BigQuery, and optionally updates Redis.
+customers, and merges the refreshed rows into the BigQuery table backing Vertex
+AI Feature Store.
 
 ```bash
 ./gcp/spark/package_src.sh
@@ -106,18 +107,24 @@ gcloud dataproc batches submit pyspark gcp/spark/refresh_selected_features.py \
   -- \
   --raw-table=amex-credit-risk-ml.amex_ml.raw_monthly_statements_amex \
   --changed-customers-table=amex-credit-risk-ml.amex_ml.changed_customers_statement_cycle \
-  --feature-table=amex-credit-risk-ml.amex_ml.train_features \
-  --staging-table=amex-credit-risk-ml.amex_ml.train_features_refresh_staging \
+  --feature-table=amex-credit-risk-ml.amex_ml.customer_features_current \
+  --staging-table=amex-credit-risk-ml.amex_ml.customer_features_current_refresh_staging \
   --selected-features-uri=gs://amex-credit-risk-ml-data/models/lightgbm/selected_feature_list.json \
-  --statement-cycle=2026-07 \
-  --redis-host=<memorystore-host>
+  --statement-cycle=2026-07
 ```
 
-Use `--skip-redis` when you only want to update BigQuery.
-
 The Dataproc runtime must have the Spark BigQuery connector available. The
-driver also needs `google-cloud-bigquery` for the `MERGE`; workers need `redis`
-only when Redis refresh is enabled.
+driver also needs `google-cloud-bigquery` for the `MERGE`.
+
+Set up the Vertex AI Feature Store online path from the current serving feature
+table:
+
+```bash
+python deployment/setup_feature_store.py \
+  --project=amex-credit-risk-ml \
+  --location=us-central1 \
+  --source-table=amex-credit-risk-ml.amex_ml.customer_features_current
+```
 
 ## Vertex training artifacts
 

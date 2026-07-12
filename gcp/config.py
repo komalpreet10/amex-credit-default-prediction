@@ -20,6 +20,10 @@ DATASET = "amex_ml"
 FEATURE_TABLE_ID = "train_features"
 TRAIN_FEATURE_TABLE_ID = "train_features_train"
 TEST_FEATURE_TABLE_ID = "train_features_test"
+CUSTOMER_FEATURES_TABLE_ID = os.getenv(
+    "CUSTOMER_FEATURES_TABLE_ID",
+    "customer_features_current",
+)
 STATEMENT_HISTORY_TABLE_ID = os.getenv(
     "STATEMENT_HISTORY_TABLE_ID",
     "raw_monthly_statements_amex",
@@ -49,27 +53,11 @@ TUNING_N_SPLITS = 5
 TRAINING_SHAP_SAMPLE_SIZE = 3000
 TRAINING_SHAP_MAX_DISPLAY = 30
 
-# Online inference cache.
-REDIS_INSTANCE_ID = os.getenv("REDIS_INSTANCE_ID", "amex-feature-cache")
-REDIS_TIER = os.getenv("REDIS_TIER", "standard")
-REDIS_SIZE_GB = os.getenv("REDIS_SIZE_GB", "5")
-REDIS_VERSION = os.getenv("REDIS_VERSION", "redis_7_0")
-REDIS_NETWORK = os.getenv("REDIS_NETWORK", "default")
-REDIS_PORT = int(os.getenv("REDIS_PORT", "6378"))
-REDIS_TRANSIT_ENCRYPTION_MODE = os.getenv(
-    "REDIS_TRANSIT_ENCRYPTION_MODE",
-    "SERVER_AUTHENTICATION",
+# Online feature serving.
+FEATURE_STORE_NAME = os.getenv(
+    "FEATURE_STORE_NAME", "amex_credit_default_feature_store"
 )
-REDIS_SSL_ENABLED = os.getenv("REDIS_SSL_ENABLED", "true").lower() == "true"
-REDIS_SSL_CA_CERTS = os.getenv("REDIS_SSL_CA_CERTS")
-REDIS_SSL_CA_CERT_CONTENT = os.getenv("REDIS_SSL_CA_CERT_CONTENT")
-REDIS_SSL_CA_CERT_SECRET = os.getenv("REDIS_SSL_CA_CERT_SECRET", "redis-ca-cert")
-REDIS_FEATURE_TTL_SECONDS = (
-    3_024_000  # 35 days (30-day cycle + 5-day buffer for Dataflow recompute lag).
-)
-REDIS_EVICTION_POLICY = os.getenv("REDIS_EVICTION_POLICY", "volatile-ttl")
-VPC_CONNECTOR_NAME = os.getenv("VPC_CONNECTOR_NAME", "amex-vpc-connector")
-VPC_CONNECTOR_RANGE = os.getenv("VPC_CONNECTOR_RANGE", "10.8.0.0/28")
+FEATURE_VIEW_NAME = os.getenv("FEATURE_VIEW_NAME", "customer_features_current")
 
 # Raw and engineered feature data.
 RAW_DATA = f"gs://{BUCKET}/raw/train_data.csv"
@@ -81,6 +69,7 @@ FEATURES_PARQUET_URI = f"{FEATURES}*.parquet"
 FEATURE_TABLE = f"{PROJECT_ID}.{DATASET}.{FEATURE_TABLE_ID}"
 TRAIN_FEATURE_TABLE = f"{PROJECT_ID}.{DATASET}.{TRAIN_FEATURE_TABLE_ID}"
 TEST_FEATURE_TABLE = f"{PROJECT_ID}.{DATASET}.{TEST_FEATURE_TABLE_ID}"
+CUSTOMER_FEATURES_TABLE = f"{PROJECT_ID}.{DATASET}.{CUSTOMER_FEATURES_TABLE_ID}"
 STATEMENT_HISTORY_TABLE = f"{PROJECT_ID}.{DATASET}.{STATEMENT_HISTORY_TABLE_ID}"
 CHANGED_CUSTOMERS_TABLE = f"{PROJECT_ID}.{DATASET}.{CHANGED_CUSTOMERS_TABLE_ID}"
 DRIFT_TABLE = f"{PROJECT_ID}.{DATASET}.{DRIFT_TABLE_ID}"

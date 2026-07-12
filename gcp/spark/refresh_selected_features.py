@@ -3,9 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import math
 from collections.abc import Iterable
-from decimal import Decimal
 from typing import Any
 
 from pyspark.sql import DataFrame, SparkSession
@@ -13,15 +11,11 @@ from pyspark.sql import functions as F
 
 from amex_default.config import CATEGORICAL_FEATURES, DATE_COL, ID_COL
 from amex_default.features_spark import build_customer_features
-from amex_default.redis_config import redis_ssl_ca_certs
 from gcp.config import (
     BQ_LOCATION,
     CHANGED_CUSTOMERS_TABLE,
-    FEATURE_TABLE,
+    CUSTOMER_FEATURES_TABLE,
     PROJECT_ID,
-    REDIS_FEATURE_TTL_SECONDS,
-    REDIS_PORT,
-    REDIS_SSL_ENABLED,
     SELECTED_FEATURES_URI,
     STATEMENT_HISTORY_TABLE,
 )
@@ -39,15 +33,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--bq-location", default=BQ_LOCATION)
     parser.add_argument("--raw-table", default=STATEMENT_HISTORY_TABLE)
     parser.add_argument("--changed-customers-table", default=CHANGED_CUSTOMERS_TABLE)
-    parser.add_argument("--feature-table", default=FEATURE_TABLE)
-    parser.add_argument("--staging-table", default=f"{FEATURE_TABLE}_refresh_staging")
+    parser.add_argument("--feature-table", default=CUSTOMER_FEATURES_TABLE)
+    parser.add_argument(
+        "--staging-table", default=f"{CUSTOMER_FEATURES_TABLE}_refresh_staging"
+    )
     parser.add_argument("--selected-features-uri", default=SELECTED_FEATURES_URI)
     parser.add_argument("--statement-cycle", default=None)
     parser.add_argument("--cycle-column", default="statement_cycle")
-    parser.add_argument("--redis-host", default=None)
-    parser.add_argument("--redis-port", type=int, default=REDIS_PORT)
-    parser.add_argument("--skip-redis", action="store_true")
-    parser.add_argument("--redis-batch-size", type=int, default=1000)
     return parser.parse_args()
 
 
@@ -127,23 +119,24 @@ def read_statement_history(
     missing = [column for column in raw_columns if column not in statements.columns]
     if missing:
         raise ValueError(f"Raw statement table is missing columns: {missing}")
-    return statements.select(*raw_columns).join(changed_customers, on=ID_COL, how="inner")
+    return statements.select(*raw_columns).join(
+        changed_customers, on=ID_COL, how="inner"
+    )
 
 
-def select_model_features(features: DataFrame, selected_features: list[str]) -> DataFrame:
-    missing = [feature for feature in selected_features if feature not in features.columns]
+def select_model_features(
+    features: DataFrame, selected_features: list[str]
+) -> DataFrame:
+    missing = [
+        feature for feature in selected_features if feature not in features.columns
+    ]
     for feature in missing:
         features = features.withColumn(feature, F.lit(0.0))
     return features.select(ID_COL, *selected_features)
 
 
 def write_staging_table(features: DataFrame, table: str) -> None:
-    (
-        features.write.format("bigquery")
-        .option("table", table)
-        .mode("overwrite")
-        .save()
-    )
+    (features.write.format("bigquery").option("table", table).mode("overwrite").save())
 
 
 def merge_staging_to_feature_table(
@@ -178,65 +171,6 @@ def merge_staging_to_feature_table(
     client.query(query, location=location).result()
 
 
-def json_default(value: Any) -> Any:
-    if isinstance(value, Decimal):
-        return float(value)
-    if isinstance(value, float) and not math.isfinite(value):
-        return 0.0
-    if hasattr(value, "isoformat"):
-        return value.isoformat()
-    raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
-
-
-def refresh_redis_partition(
-    rows: Iterable[Any],
-    redis_host: str,
-    redis_port: int,
-    batch_size: int,
-) -> None:
-    import redis
-
-    client = redis.Redis(
-        host=redis_host,
-        port=redis_port,
-        decode_responses=True,
-        socket_timeout=10,
-        ssl=REDIS_SSL_ENABLED,
-        ssl_ca_certs=redis_ssl_ca_certs(),
-    )
-    pipe = client.pipeline(transaction=False)
-    pending = 0
-    for row in rows:
-        record = row.asDict(recursive=True)
-        customer_id = record.pop(ID_COL)
-        payload = json.dumps(record, default=json_default, separators=(",", ":"))
-        pipe.setex(f"features:{customer_id}", REDIS_FEATURE_TTL_SECONDS, payload)
-        pending += 1
-        if pending >= batch_size:
-            pipe.execute()
-            pending = 0
-    if pending:
-        pipe.execute()
-
-
-def refresh_redis(features: DataFrame, args: argparse.Namespace) -> None:
-    if args.skip_redis:
-        LOGGER.info("Skipping Redis refresh")
-        return
-    if not args.redis_host:
-        raise RuntimeError("--redis-host is required unless --skip-redis is set.")
-    if args.redis_batch_size <= 0:
-        raise ValueError("--redis-batch-size must be positive.")
-    features.foreachPartition(
-        lambda rows: refresh_redis_partition(
-            rows,
-            redis_host=args.redis_host,
-            redis_port=args.redis_port,
-            batch_size=args.redis_batch_size,
-        )
-    )
-
-
 def main() -> None:
     logging.basicConfig(level=logging.INFO)
     args = parse_args()
@@ -261,7 +195,9 @@ def main() -> None:
             changed_customers=changed_customers,
         )
 
-        categorical = [column for column in CATEGORICAL_FEATURES if column in raw_columns]
+        categorical = [
+            column for column in CATEGORICAL_FEATURES if column in raw_columns
+        ]
         for column in categorical:
             statements = statements.withColumn(column, F.col(column).cast("string"))
 
@@ -278,7 +214,6 @@ def main() -> None:
             feature_table=args.feature_table,
             selected_features=selected_features,
         )
-        refresh_redis(refreshed, args)
         LOGGER.info("Completed selected-feature refresh")
     finally:
         spark.stop()

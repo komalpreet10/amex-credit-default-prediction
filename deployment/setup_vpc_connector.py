@@ -4,13 +4,7 @@ import argparse
 import logging
 import subprocess
 
-from gcp.config import (
-    PROJECT_ID,
-    REDIS_NETWORK,
-    REGION,
-    VPC_CONNECTOR_NAME,
-    VPC_CONNECTOR_RANGE,
-)
+from gcp.config import PROJECT_ID, REGION
 
 LOGGER = logging.getLogger(__name__)
 
@@ -19,9 +13,9 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--project", default=PROJECT_ID)
     parser.add_argument("--region", default=REGION)
-    parser.add_argument("--network", default=REDIS_NETWORK)
-    parser.add_argument("--name", default=VPC_CONNECTOR_NAME)
-    parser.add_argument("--range", default=VPC_CONNECTOR_RANGE)
+    parser.add_argument("--network", default="default")
+    parser.add_argument("--name", default="amex-vpc-connector")
+    parser.add_argument("--range", default="10.8.0.0/28")
     return parser.parse_args()
 
 
