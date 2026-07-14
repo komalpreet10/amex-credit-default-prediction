@@ -74,27 +74,6 @@ Feature store:    amex_credit_default_feature_store
 Feature view:     customer_features_current
 ```
 
-## Pipeline Outputs
-
-```text
-models/lightgbm/
-  model.txt
-  metrics.json
-  selected_feature_list.json
-  full_feature_list.json
-  feature_importance.csv
-  plots/test_roc_curve.png
-  plots/test_pr_curve.png
-  mlruns/
-
-models/lightgbm/tuning/
-  lightgbm_optuna_best_params.json
-  lightgbm_optuna_trials.csv
-  cv_metrics.json
-  plots/cv_roc_curve.png
-  plots/cv_pr_curve.png
-```
-
 ## Run
 
 Compile the Vertex AI pipeline:
