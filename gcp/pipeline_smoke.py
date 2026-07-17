@@ -8,10 +8,70 @@ from gcp.config import (
     REGION,
     TRAINING_IMAGE,
 )
-from gcp.pipeline import run_vertex_training_job, run_vertex_tuning_job
+from gcp.pipeline import PIP_ROOT_USER_OPTION, run_vertex_training_job
 
 SMOKE_TUNING_ARTIFACTS = f"{MODEL_ARTIFACTS.rstrip('/')}/smoke/tuning/"
 SMOKE_MODEL_ARTIFACTS = f"{MODEL_ARTIFACTS.rstrip('/')}/smoke/"
+
+
+@dsl.component(
+    base_image="python:3.11",
+    packages_to_install=["google-cloud-aiplatform", PIP_ROOT_USER_OPTION],
+    use_venv=True,
+)
+def run_vertex_tuning_job(
+    project: str,
+    region: str,
+    training_image: str,
+    table: str,
+    output_dir: str,
+    display_name: str,
+    metric: str,
+    n_trials: int,
+    n_splits: int,
+    num_boost_round: int,
+    early_stopping_rounds: int,
+    max_rows: int,
+    balanced_smoke_sample: bool,
+    replica_count: int,
+    machine_type: str,
+) -> str:
+    from google.cloud import aiplatform
+
+    aiplatform.init(project=project, location=region, staging_bucket=output_dir)
+    job = aiplatform.CustomContainerTrainingJob(
+        display_name=display_name,
+        container_uri=training_image,
+        command=["python", "gcp/vertex/tune_lightgbm_optuna.py"],
+    )
+    job_args = [
+        "--table",
+        table,
+        "--metric",
+        metric,
+        "--n-trials",
+        str(n_trials),
+        "--n-splits",
+        str(n_splits),
+        "--num-boost-round",
+        str(num_boost_round),
+        "--early-stopping-rounds",
+        str(early_stopping_rounds),
+        "--output-dir",
+        output_dir,
+    ]
+    if max_rows > 0:
+        job_args.extend(["--max-rows", str(max_rows)])
+    if balanced_smoke_sample:
+        job_args.append("--balanced-smoke-sample")
+
+    job.run(
+        args=job_args,
+        replica_count=replica_count,
+        machine_type=machine_type,
+        sync=True,
+    )
+    return f"{output_dir.rstrip('/')}/lightgbm_optuna_best_params.json"
 
 
 @dsl.pipeline(

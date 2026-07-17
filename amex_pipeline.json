@@ -1,25 +1,89 @@
 {
   "components": {
-    "comp-deploy-model-to-endpoint": {
-      "executorLabel": "exec-deploy-model-to-endpoint",
+    "comp-load-parquet-to-bigquery": {
+      "executorLabel": "exec-load-parquet-to-bigquery",
       "inputDefinitions": {
         "parameters": {
-          "deployed_model_display_name": {
+          "location": {
             "parameterType": "STRING"
           },
-          "endpoint_display_name": {
+          "project": {
             "parameterType": "STRING"
           },
-          "machine_type": {
+          "source_uri": {
             "parameterType": "STRING"
           },
-          "max_replica_count": {
+          "table": {
+            "parameterType": "STRING"
+          }
+        }
+      },
+      "outputDefinitions": {
+        "parameters": {
+          "Output": {
+            "parameterType": "STRING"
+          }
+        }
+      }
+    },
+    "comp-run-batch-inference": {
+      "executorLabel": "exec-run-batch-inference",
+      "inputDefinitions": {
+        "parameters": {
+          "job_display_name": {
+            "parameterType": "STRING"
+          },
+          "location": {
+            "parameterType": "STRING"
+          },
+          "model_artifacts_uri": {
+            "parameterType": "STRING"
+          },
+          "output_table": {
+            "parameterType": "STRING"
+          },
+          "project": {
+            "parameterType": "STRING"
+          },
+          "selected_features_uri": {
+            "parameterType": "STRING"
+          },
+          "source_table": {
+            "parameterType": "STRING"
+          }
+        }
+      },
+      "outputDefinitions": {
+        "parameters": {
+          "Output": {
+            "parameterType": "STRING"
+          }
+        }
+      }
+    },
+    "comp-run-psi-drift-job": {
+      "executorLabel": "exec-run-psi-drift-job",
+      "inputDefinitions": {
+        "parameters": {
+          "baseline_table": {
+            "parameterType": "STRING"
+          },
+          "bq_location": {
+            "parameterType": "STRING"
+          },
+          "current_table": {
+            "parameterType": "STRING"
+          },
+          "display_name": {
+            "parameterType": "STRING"
+          },
+          "max_rows": {
             "parameterType": "NUMBER_INTEGER"
           },
-          "min_replica_count": {
-            "parameterType": "NUMBER_INTEGER"
+          "metrics_table": {
+            "parameterType": "STRING"
           },
-          "model_resource_name": {
+          "output_uri": {
             "parameterType": "STRING"
           },
           "project": {
@@ -28,7 +92,87 @@
           "region": {
             "parameterType": "STRING"
           },
-          "traffic_percentage": {
+          "training_image": {
+            "parameterType": "STRING"
+          }
+        }
+      },
+      "outputDefinitions": {
+        "parameters": {
+          "Output": {
+            "parameterType": "STRING"
+          }
+        }
+      }
+    },
+    "comp-run-pyspark-batch": {
+      "executorLabel": "exec-run-pyspark-batch",
+      "inputDefinitions": {
+        "parameters": {
+          "args": {
+            "parameterType": "LIST"
+          },
+          "batch_id": {
+            "parameterType": "STRING"
+          },
+          "project": {
+            "parameterType": "STRING"
+          },
+          "py_file_uris": {
+            "parameterType": "LIST"
+          },
+          "region": {
+            "parameterType": "STRING"
+          },
+          "runtime_properties": {
+            "parameterType": "STRUCT"
+          },
+          "script_uri": {
+            "parameterType": "STRING"
+          },
+          "timeout_seconds": {
+            "defaultValue": 7200.0,
+            "isOptional": true,
+            "parameterType": "NUMBER_INTEGER"
+          }
+        }
+      },
+      "outputDefinitions": {
+        "parameters": {
+          "Output": {
+            "parameterType": "STRING"
+          }
+        }
+      }
+    },
+    "comp-run-pyspark-batch-2": {
+      "executorLabel": "exec-run-pyspark-batch-2",
+      "inputDefinitions": {
+        "parameters": {
+          "args": {
+            "parameterType": "LIST"
+          },
+          "batch_id": {
+            "parameterType": "STRING"
+          },
+          "project": {
+            "parameterType": "STRING"
+          },
+          "py_file_uris": {
+            "parameterType": "LIST"
+          },
+          "region": {
+            "parameterType": "STRING"
+          },
+          "runtime_properties": {
+            "parameterType": "STRUCT"
+          },
+          "script_uri": {
+            "parameterType": "STRING"
+          },
+          "timeout_seconds": {
+            "defaultValue": 7200.0,
+            "isOptional": true,
             "parameterType": "NUMBER_INTEGER"
           }
         }
@@ -144,14 +288,17 @@
         }
       }
     },
-    "comp-upload-vertex-model": {
-      "executorLabel": "exec-upload-vertex-model",
+    "comp-sync-vertex-feature-store": {
+      "executorLabel": "exec-sync-vertex-feature-store",
       "inputDefinitions": {
         "parameters": {
-          "artifact_uri": {
+          "entity_id_column": {
             "parameterType": "STRING"
           },
-          "model_display_name": {
+          "feature_store_name": {
+            "parameterType": "STRING"
+          },
+          "feature_view_name": {
             "parameterType": "STRING"
           },
           "project": {
@@ -160,7 +307,7 @@
           "region": {
             "parameterType": "STRING"
           },
-          "serving_image": {
+          "source_table": {
             "parameterType": "STRING"
           }
         }
@@ -177,13 +324,53 @@
   "defaultPipelineRoot": "gs://amex-credit-risk-ml-data/pipeline-root/",
   "deploymentSpec": {
     "executors": {
-      "exec-deploy-model-to-endpoint": {
+      "exec-load-parquet-to-bigquery": {
         "container": {
           "args": [
             "--executor_input",
             "{{$}}",
             "--function_to_execute",
-            "deploy_model_to_endpoint"
+            "load_parquet_to_bigquery"
+          ],
+          "command": [
+            "sh",
+            "-c",
+            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'google-cloud-bigquery' '--root-user-action=ignore'  &&  \nexport PIP_DISABLE_PIP_VERSION_CHECK=1\ntmp=$(mktemp -d)\npython3 -m venv \"$tmp/venv\" --system-site-packages\n. \"$tmp/venv/bin/activate\"\n python3 -m pip install --quiet --no-warn-script-location 'kfp==2.16.1' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"$0\" \"$@\"\n",
+            "sh",
+            "-ec",
+            "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef load_parquet_to_bigquery(\n    project: str,\n    location: str,\n    source_uri: str,\n    table: str,\n) -> str:\n    from google.cloud import bigquery\n\n    client = bigquery.Client(project=project, location=location)\n    job_config = bigquery.LoadJobConfig(\n        source_format=bigquery.SourceFormat.PARQUET,\n        write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,\n    )\n    client.load_table_from_uri(\n        source_uri,\n        table,\n        job_config=job_config,\n        location=location,\n    ).result()\n    return table\n\n"
+          ],
+          "image": "python:3.11"
+        }
+      },
+      "exec-run-batch-inference": {
+        "container": {
+          "args": [
+            "--executor_input",
+            "{{$}}",
+            "--function_to_execute",
+            "run_batch_inference"
+          ],
+          "command": [
+            "sh",
+            "-c",
+            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'google-cloud-bigquery' 'google-cloud-storage' 'lightgbm' '--root-user-action=ignore'  &&  \nexport PIP_DISABLE_PIP_VERSION_CHECK=1\ntmp=$(mktemp -d)\npython3 -m venv \"$tmp/venv\" --system-site-packages\n. \"$tmp/venv/bin/activate\"\n python3 -m pip install --quiet --no-warn-script-location 'kfp==2.16.1' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"$0\" \"$@\"\n",
+            "sh",
+            "-ec",
+            "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef run_batch_inference(\n    project: str,\n    location: str,\n    model_artifacts_uri: str,\n    selected_features_uri: str,\n    source_table: str,\n    output_table: str,\n    job_display_name: str,\n) -> str:\n    from datetime import UTC, datetime\n    import json\n    import tempfile\n    from pathlib import Path\n\n    import lightgbm as lgb\n    from google.cloud import bigquery, storage\n\n    def download_text(uri: str) -> str:\n        bucket_name, blob_name = uri.removeprefix(\"gs://\").split(\"/\", 1)\n        return storage.Client().bucket(bucket_name).blob(blob_name).download_as_text()\n\n    def download_file(uri: str, destination: Path) -> None:\n        bucket_name, blob_name = uri.removeprefix(\"gs://\").split(\"/\", 1)\n        storage.Client().bucket(bucket_name).blob(blob_name).download_to_filename(\n            destination\n        )\n\n    feature_list = json.loads(download_text(selected_features_uri))\n    if not isinstance(feature_list, list) or not feature_list:\n        raise ValueError(\"Selected feature list must be a non-empty JSON list.\")\n\n    client = bigquery.Client(project=project, location=location)\n    quoted_features = \", \".join(f\"`{feature}`\" for feature in feature_list)\n    scoring_rows = [\n        dict(row.items())\n        for row in client.query(\n            f\"SELECT `customer_ID`, {quoted_features} FROM `{source_table}`\"\n        ).result()\n    ]\n    if not scoring_rows:\n        raise ValueError(f\"No rows available for batch inference in {source_table}.\")\n\n    with tempfile.TemporaryDirectory() as tmpdir:\n        model_path = Path(tmpdir) / \"model.txt\"\n        download_file(f\"{model_artifacts_uri.rstrip('/')}/model.txt\", model_path)\n        model = lgb.Booster(model_file=str(model_path))\n\n    feature_matrix = [\n        [\n            row.get(feature) if row.get(feature) is not None else 0.0\n            for feature in feature_list\n        ]\n        for row in scoring_rows\n    ]\n    probabilities = model.predict(feature_matrix)\n    scored_at = datetime.now(UTC).isoformat()\n    predictions = []\n    for row, probability in zip(scoring_rows, probabilities, strict=True):\n        probability = float(probability)\n        if probability < 0.25:\n            risk_category = \"low\"\n        elif probability < 0.60:\n            risk_category = \"medium\"\n        else:\n            risk_category = \"high\"\n        predictions.append(\n            {\n                \"customer_ID\": row[\"customer_ID\"],\n                \"default_probability\": probability,\n                \"risk_category\": risk_category,\n                \"scoring_job\": job_display_name,\n                \"scored_at\": scored_at,\n            }\n        )\n\n    job_config = bigquery.LoadJobConfig(\n        schema=[\n            bigquery.SchemaField(\"customer_ID\", \"STRING\"),\n            bigquery.SchemaField(\"default_probability\", \"FLOAT\"),\n            bigquery.SchemaField(\"risk_category\", \"STRING\"),\n            bigquery.SchemaField(\"scoring_job\", \"STRING\"),\n            bigquery.SchemaField(\"scored_at\", \"TIMESTAMP\"),\n        ],\n        write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,\n    )\n    client.load_table_from_json(\n        predictions,\n        output_table,\n        job_config=job_config,\n        location=location,\n    ).result()\n    return output_table\n\n"
+          ],
+          "image": "python:3.11"
+        }
+      },
+      "exec-run-psi-drift-job": {
+        "container": {
+          "args": [
+            "--executor_input",
+            "{{$}}",
+            "--function_to_execute",
+            "run_psi_drift_job"
           ],
           "command": [
             "sh",
@@ -192,7 +379,47 @@
             "sh",
             "-ec",
             "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
-            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef deploy_model_to_endpoint(\n    project: str,\n    region: str,\n    model_resource_name: str,\n    endpoint_display_name: str,\n    deployed_model_display_name: str,\n    machine_type: str,\n    min_replica_count: int,\n    max_replica_count: int,\n    traffic_percentage: int,\n) -> str:\n    from google.cloud import aiplatform\n\n    aiplatform.init(project=project, location=region)\n    model = aiplatform.Model(model_resource_name)\n    endpoints = aiplatform.Endpoint.list(\n        filter=f'display_name=\"{endpoint_display_name}\"',\n        order_by=\"create_time desc\",\n    )\n    if endpoints:\n        endpoint = endpoints[0]\n    else:\n        endpoint = aiplatform.Endpoint.create(display_name=endpoint_display_name)\n    model.deploy(\n        endpoint=endpoint,\n        deployed_model_display_name=deployed_model_display_name,\n        machine_type=machine_type,\n        min_replica_count=min_replica_count,\n        max_replica_count=max_replica_count,\n        traffic_percentage=traffic_percentage,\n        sync=True,\n    )\n    return endpoint.resource_name\n\n"
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef run_psi_drift_job(\n    project: str,\n    region: str,\n    training_image: str,\n    bq_location: str,\n    baseline_table: str,\n    current_table: str,\n    metrics_table: str,\n    output_uri: str,\n    display_name: str,\n    max_rows: int,\n) -> str:\n    from google.cloud import aiplatform\n\n    staging_bucket = output_uri.rsplit(\"/\", 1)[0] + \"/\"\n    aiplatform.init(project=project, location=region, staging_bucket=staging_bucket)\n    job = aiplatform.CustomContainerTrainingJob(\n        display_name=display_name,\n        container_uri=training_image,\n        command=[\"python\", \"gcp/monitoring/drift_psi.py\"],\n    )\n    job_args = [\n        \"--project\",\n        project,\n        \"--bq-location\",\n        bq_location,\n        \"--baseline-table\",\n        baseline_table,\n        \"--current-table\",\n        current_table,\n        \"--metrics-table\",\n        metrics_table,\n        \"--output-uri\",\n        output_uri,\n    ]\n    if max_rows > 0:\n        job_args.extend([\"--max-rows\", str(max_rows)])\n\n    job.run(\n        args=job_args,\n        replica_count=1,\n        machine_type=\"n2-standard-4\",\n        sync=True,\n    )\n    return output_uri\n\n"
+          ],
+          "image": "python:3.11"
+        }
+      },
+      "exec-run-pyspark-batch": {
+        "container": {
+          "args": [
+            "--executor_input",
+            "{{$}}",
+            "--function_to_execute",
+            "run_pyspark_batch"
+          ],
+          "command": [
+            "sh",
+            "-c",
+            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'google-cloud-dataproc' '--root-user-action=ignore'  &&  \nexport PIP_DISABLE_PIP_VERSION_CHECK=1\ntmp=$(mktemp -d)\npython3 -m venv \"$tmp/venv\" --system-site-packages\n. \"$tmp/venv/bin/activate\"\n python3 -m pip install --quiet --no-warn-script-location 'kfp==2.16.1' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"$0\" \"$@\"\n",
+            "sh",
+            "-ec",
+            "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef run_pyspark_batch(\n    project: str,\n    region: str,\n    batch_id: str,\n    script_uri: str,\n    py_file_uris: list[str],\n    args: list[str],\n    runtime_properties: dict[str, str],\n    timeout_seconds: int = 7200,\n) -> str:\n    import uuid\n\n    from google.cloud.dataproc_v1 import BatchControllerClient\n    from google.cloud.dataproc_v1.types import Batch, PySparkBatch, RuntimeConfig\n\n    client = BatchControllerClient(\n        client_options={\"api_endpoint\": f\"{region}-dataproc.googleapis.com:443\"}\n    )\n    batch_name = f\"{batch_id}-{uuid.uuid4().hex[:8]}\"\n    operation = client.create_batch(\n        request={\n            \"parent\": f\"projects/{project}/locations/{region}\",\n            \"batch_id\": batch_name,\n            \"batch\": Batch(\n                pyspark_batch=PySparkBatch(\n                    main_python_file_uri=script_uri,\n                    python_file_uris=py_file_uris,\n                    args=args,\n                ),\n                runtime_config=RuntimeConfig(properties=runtime_properties),\n            ),\n        }\n    )\n    response = operation.result(timeout=timeout_seconds)\n    if response.state.name != \"SUCCEEDED\":\n        raise RuntimeError(\n            f\"Dataproc batch {batch_name} ended as {response.state.name}: \"\n            f\"{response.state_message}\"\n        )\n    return response.name\n\n"
+          ],
+          "image": "python:3.11"
+        }
+      },
+      "exec-run-pyspark-batch-2": {
+        "container": {
+          "args": [
+            "--executor_input",
+            "{{$}}",
+            "--function_to_execute",
+            "run_pyspark_batch"
+          ],
+          "command": [
+            "sh",
+            "-c",
+            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'google-cloud-dataproc' '--root-user-action=ignore'  &&  \nexport PIP_DISABLE_PIP_VERSION_CHECK=1\ntmp=$(mktemp -d)\npython3 -m venv \"$tmp/venv\" --system-site-packages\n. \"$tmp/venv/bin/activate\"\n python3 -m pip install --quiet --no-warn-script-location 'kfp==2.16.1' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"$0\" \"$@\"\n",
+            "sh",
+            "-ec",
+            "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef run_pyspark_batch(\n    project: str,\n    region: str,\n    batch_id: str,\n    script_uri: str,\n    py_file_uris: list[str],\n    args: list[str],\n    runtime_properties: dict[str, str],\n    timeout_seconds: int = 7200,\n) -> str:\n    import uuid\n\n    from google.cloud.dataproc_v1 import BatchControllerClient\n    from google.cloud.dataproc_v1.types import Batch, PySparkBatch, RuntimeConfig\n\n    client = BatchControllerClient(\n        client_options={\"api_endpoint\": f\"{region}-dataproc.googleapis.com:443\"}\n    )\n    batch_name = f\"{batch_id}-{uuid.uuid4().hex[:8]}\"\n    operation = client.create_batch(\n        request={\n            \"parent\": f\"projects/{project}/locations/{region}\",\n            \"batch_id\": batch_name,\n            \"batch\": Batch(\n                pyspark_batch=PySparkBatch(\n                    main_python_file_uri=script_uri,\n                    python_file_uris=py_file_uris,\n                    args=args,\n                ),\n                runtime_config=RuntimeConfig(properties=runtime_properties),\n            ),\n        }\n    )\n    response = operation.result(timeout=timeout_seconds)\n    if response.state.name != \"SUCCEEDED\":\n        raise RuntimeError(\n            f\"Dataproc batch {batch_name} ended as {response.state.name}: \"\n            f\"{response.state_message}\"\n        )\n    return response.name\n\n"
           ],
           "image": "python:3.11"
         }
@@ -212,7 +439,7 @@
             "sh",
             "-ec",
             "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
-            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef run_vertex_training_job(\n    project: str,\n    region: str,\n    training_image: str,\n    table: str,\n    eval_table: str,\n    output_dir: str,\n    params_uri: str,\n    display_name: str,\n    shap_sample_size: int,\n    shap_max_display: int,\n    max_rows: int,\n    balanced_smoke_sample: bool,\n    selector_num_boost_round: int,\n    final_num_boost_round: int,\n    min_selected_features: int,\n    max_selected_features: int,\n    disable_shap: bool,\n    replica_count: int,\n    machine_type: str,\n) -> str:\n    from google.cloud import aiplatform\n\n    aiplatform.init(project=project, location=region, staging_bucket=output_dir)\n    job = aiplatform.CustomContainerTrainingJob(\n        display_name=display_name,\n        container_uri=training_image,\n        command=[\"python\", \"gcp/vertex/train.py\"],\n    )\n    job_args = [\n        \"--table\",\n        table,\n        \"--eval-table\",\n        eval_table,\n        \"--params-uri\",\n        params_uri,\n        \"--output-dir\",\n        output_dir,\n        \"--selector-num-boost-round\",\n        str(selector_num_boost_round),\n        \"--final-num-boost-round\",\n        str(final_num_boost_round),\n        \"--min-selected-features\",\n        str(min_selected_features),\n        \"--max-selected-features\",\n        str(max_selected_features),\n        \"--shap-sample-size\",\n        str(shap_sample_size),\n        \"--shap-max-display\",\n        str(shap_max_display),\n    ]\n    if max_rows > 0:\n        job_args.extend([\"--max-rows\", str(max_rows)])\n    if balanced_smoke_sample:\n        job_args.append(\"--balanced-smoke-sample\")\n    if disable_shap:\n        job_args.append(\"--disable-shap\")\n    model = job.run(\n        args=job_args,\n        replica_count=replica_count,\n        machine_type=machine_type,\n        sync=True,\n    )\n    return model.resource_name if model else output_dir\n\n"
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef run_vertex_training_job(\n    project: str,\n    region: str,\n    training_image: str,\n    table: str,\n    eval_table: str,\n    output_dir: str,\n    params_uri: str,\n    display_name: str,\n    shap_sample_size: int,\n    shap_max_display: int,\n    max_rows: int,\n    balanced_smoke_sample: bool,\n    selector_num_boost_round: int,\n    final_num_boost_round: int,\n    min_selected_features: int,\n    max_selected_features: int,\n    disable_shap: bool,\n    replica_count: int,\n    machine_type: str,\n) -> str:\n    from google.cloud import aiplatform\n\n    aiplatform.init(project=project, location=region, staging_bucket=output_dir)\n    job = aiplatform.CustomContainerTrainingJob(\n        display_name=display_name,\n        container_uri=training_image,\n        command=[\"python\", \"gcp/vertex/train.py\"],\n    )\n    job_args = [\n        \"--table\",\n        table,\n        \"--eval-table\",\n        eval_table,\n        \"--params-uri\",\n        params_uri,\n        \"--output-dir\",\n        output_dir,\n        \"--selector-num-boost-round\",\n        str(selector_num_boost_round),\n        \"--final-num-boost-round\",\n        str(final_num_boost_round),\n        \"--min-selected-features\",\n        str(min_selected_features),\n        \"--max-selected-features\",\n        str(max_selected_features),\n        \"--shap-sample-size\",\n        str(shap_sample_size),\n        \"--shap-max-display\",\n        str(shap_max_display),\n    ]\n    if max_rows > 0:\n        job_args.extend([\"--max-rows\", str(max_rows)])\n    if balanced_smoke_sample:\n        job_args.append(\"--balanced-smoke-sample\")\n    if disable_shap:\n        job_args.append(\"--disable-shap\")\n\n    model = job.run(\n        args=job_args,\n        replica_count=replica_count,\n        machine_type=machine_type,\n        sync=True,\n    )\n    return model.resource_name if model else output_dir\n\n"
           ],
           "image": "python:3.11"
         }
@@ -237,13 +464,13 @@
           "image": "python:3.11"
         }
       },
-      "exec-upload-vertex-model": {
+      "exec-sync-vertex-feature-store": {
         "container": {
           "args": [
             "--executor_input",
             "{{$}}",
             "--function_to_execute",
-            "upload_vertex_model"
+            "sync_vertex_feature_store"
           ],
           "command": [
             "sh",
@@ -252,7 +479,7 @@
             "sh",
             "-ec",
             "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
-            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef upload_vertex_model(\n    project: str,\n    region: str,\n    artifact_uri: str,\n    serving_image: str,\n    model_display_name: str,\n) -> str:\n    from google.cloud import aiplatform\n\n    if not serving_image:\n        raise ValueError(\n            \"serving_image is required. Build and push docker/Dockerfile.serve, \"\n            \"then pass SERVING_IMAGE_URI or the pipeline serving_image parameter.\"\n        )\n\n    aiplatform.init(project=project, location=region)\n    model = aiplatform.Model.upload(\n        display_name=model_display_name,\n        artifact_uri=artifact_uri,\n        serving_container_image_uri=serving_image,\n        serving_container_predict_route=\"/predict\",\n        serving_container_health_route=\"/health\",\n        serving_container_ports=[8080],\n        labels={\"project\": \"amex-credit-default\", \"model\": \"lightgbm\"},\n        sync=True,\n    )\n    return model.resource_name\n\n"
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef sync_vertex_feature_store(\n    project: str,\n    region: str,\n    feature_store_name: str,\n    feature_view_name: str,\n    source_table: str,\n    entity_id_column: str,\n) -> str:\n    from google.api_core import exceptions\n    from google.cloud.aiplatform_v1 import (\n        CreateFeatureOnlineStoreRequest,\n        CreateFeatureViewRequest,\n        FeatureOnlineStore,\n        FeatureOnlineStoreAdminServiceClient,\n        FeatureView,\n        GetFeatureOnlineStoreRequest,\n        GetFeatureViewRequest,\n        SyncFeatureViewRequest,\n    )\n\n    client = FeatureOnlineStoreAdminServiceClient(\n        client_options={\"api_endpoint\": f\"{region}-aiplatform.googleapis.com\"}\n    )\n    parent = client.common_location_path(project, region)\n    store_resource = client.feature_online_store_path(\n        project=project,\n        location=region,\n        feature_online_store=feature_store_name,\n    )\n\n    try:\n        client.get_feature_online_store(\n            request=GetFeatureOnlineStoreRequest(name=store_resource)\n        )\n    except exceptions.NotFound:\n        client.create_feature_online_store(\n            request=CreateFeatureOnlineStoreRequest(\n                parent=parent,\n                feature_online_store_id=feature_store_name,\n                feature_online_store=FeatureOnlineStore(\n                    optimized=FeatureOnlineStore.Optimized()\n                ),\n            )\n        ).result()\n\n    view_resource = client.feature_view_path(\n        project=project,\n        location=region,\n        feature_online_store=feature_store_name,\n        feature_view=feature_view_name,\n    )\n    try:\n        client.get_feature_view(request=GetFeatureViewRequest(name=view_resource))\n    except exceptions.NotFound:\n        client.create_feature_view(\n            request=CreateFeatureViewRequest(\n                parent=store_resource,\n                feature_view_id=feature_view_name,\n                feature_view=FeatureView(\n                    big_query_source=FeatureView.BigQuerySource(\n                        uri=f\"bq://{source_table}\",\n                        entity_id_columns=[entity_id_column],\n                    ),\n                ),\n                run_sync_immediately=True,\n            )\n        ).result()\n\n    response = client.sync_feature_view(\n        request=SyncFeatureViewRequest(feature_view=view_resource)\n    )\n    return response.feature_view_sync\n\n"
           ],
           "image": "python:3.11"
         }
@@ -265,48 +492,120 @@
   "root": {
     "dag": {
       "tasks": {
-        "deploy-model-to-endpoint": {
+        "load-parquet-to-bigquery": {
           "cachingOptions": {
             "enableCache": true
           },
           "componentRef": {
-            "name": "comp-deploy-model-to-endpoint"
+            "name": "comp-load-parquet-to-bigquery"
           },
           "dependentTasks": [
-            "upload-vertex-model"
+            "run-pyspark-batch-2"
           ],
           "inputs": {
             "parameters": {
-              "deployed_model_display_name": {
+              "location": {
+                "componentInputParameter": "bq_location"
+              },
+              "pipelinechannel--feature_output": {
+                "componentInputParameter": "feature_output"
+              },
+              "project": {
+                "componentInputParameter": "project"
+              },
+              "source_uri": {
                 "runtimeValue": {
-                  "constant": "amex-lightgbm"
+                  "constant": "{{$.inputs.parameters['pipelinechannel--feature_output']}}*.parquet"
                 }
               },
-              "endpoint_display_name": {
+              "table": {
+                "componentInputParameter": "feature_table"
+              }
+            }
+          },
+          "taskInfo": {
+            "name": "load-parquet-to-bigquery"
+          }
+        },
+        "run-batch-inference": {
+          "cachingOptions": {
+            "enableCache": true
+          },
+          "componentRef": {
+            "name": "comp-run-batch-inference"
+          },
+          "dependentTasks": [
+            "sync-vertex-feature-store"
+          ],
+          "inputs": {
+            "parameters": {
+              "job_display_name": {
                 "runtimeValue": {
-                  "constant": "amex-credit-default-endpoint"
+                  "constant": "amex-lightgbm-batch-inference"
                 }
               },
-              "machine_type": {
+              "location": {
+                "componentInputParameter": "bq_location"
+              },
+              "model_artifacts_uri": {
+                "componentInputParameter": "model_artifacts"
+              },
+              "output_table": {
+                "componentInputParameter": "batch_prediction_table"
+              },
+              "project": {
+                "componentInputParameter": "project"
+              },
+              "selected_features_uri": {
                 "runtimeValue": {
-                  "constant": "n1-standard-2"
+                  "constant": "gs://amex-credit-risk-ml-data/models/lightgbm/selected_feature_list.json"
                 }
               },
-              "max_replica_count": {
+              "source_table": {
+                "componentInputParameter": "batch_source_table"
+              }
+            }
+          },
+          "taskInfo": {
+            "name": "run-batch-inference"
+          }
+        },
+        "run-psi-drift-job": {
+          "cachingOptions": {
+            "enableCache": true
+          },
+          "componentRef": {
+            "name": "comp-run-psi-drift-job"
+          },
+          "dependentTasks": [
+            "run-batch-inference"
+          ],
+          "inputs": {
+            "parameters": {
+              "baseline_table": {
+                "componentInputParameter": "feature_table"
+              },
+              "bq_location": {
+                "componentInputParameter": "bq_location"
+              },
+              "current_table": {
+                "componentInputParameter": "batch_source_table"
+              },
+              "display_name": {
                 "runtimeValue": {
-                  "constant": 1.0
+                  "constant": "amex-feature-psi-drift"
                 }
               },
-              "min_replica_count": {
+              "max_rows": {
                 "runtimeValue": {
-                  "constant": 1.0
+                  "constant": 0.0
                 }
               },
-              "model_resource_name": {
-                "taskOutputParameter": {
-                  "outputParameterKey": "Output",
-                  "producerTask": "upload-vertex-model"
-                }
+              "metrics_table": {
+                "componentInputParameter": "drift_metrics_table"
+              },
+              "output_uri": {
+                "componentInputParameter": "drift_report_uri"
               },
               "project": {
                 "componentInputParameter": "project"
@@ -314,15 +613,163 @@
               "region": {
                 "componentInputParameter": "region"
               },
-              "traffic_percentage": {
+              "training_image": {
+                "componentInputParameter": "training_image"
+              }
+            }
+          },
+          "taskInfo": {
+            "name": "run-psi-drift-job"
+          }
+        },
+        "run-pyspark-batch": {
+          "cachingOptions": {
+            "enableCache": true
+          },
+          "componentRef": {
+            "name": "comp-run-pyspark-batch"
+          },
+          "inputs": {
+            "parameters": {
+              "args": {
                 "runtimeValue": {
-                  "constant": 100.0
+                  "constant": [
+                    "--input",
+                    "{{$.inputs.parameters['pipelinechannel--raw_data']}}",
+                    "--output",
+                    "{{$.inputs.parameters['pipelinechannel--preprocessed_output']}}",
+                    "--overwrite"
+                  ]
+                }
+              },
+              "batch_id": {
+                "runtimeValue": {
+                  "constant": "amex-preprocess"
+                }
+              },
+              "pipelinechannel--preprocessed_output": {
+                "componentInputParameter": "preprocessed_output"
+              },
+              "pipelinechannel--raw_data": {
+                "componentInputParameter": "raw_data"
+              },
+              "project": {
+                "componentInputParameter": "project"
+              },
+              "py_file_uris": {
+                "runtimeValue": {
+                  "constant": [
+                    "gs://amex-credit-risk-ml-data/code/gcp/spark/amex_default.zip"
+                  ]
+                }
+              },
+              "region": {
+                "componentInputParameter": "region"
+              },
+              "runtime_properties": {
+                "runtimeValue": {
+                  "constant": {
+                    "spark.dataproc.driver.disk.size": "250g",
+                    "spark.dataproc.executor.disk.size": "250g",
+                    "spark.dataproc.scaling.version": "2",
+                    "spark.driver.cores": "4",
+                    "spark.driver.memory": "9600m",
+                    "spark.dynamicAllocation.executorAllocationRatio": "0.3",
+                    "spark.executor.cores": "4",
+                    "spark.executor.instances": "2",
+                    "spark.executor.memory": "9600m",
+                    "spark.sql.shuffle.partitions": "32"
+                  }
+                }
+              },
+              "script_uri": {
+                "runtimeValue": {
+                  "constant": "gs://amex-credit-risk-ml-data/code/gcp/spark/preprocess.py"
                 }
               }
             }
           },
           "taskInfo": {
-            "name": "deploy-model-to-endpoint"
+            "name": "run-pyspark-batch"
+          }
+        },
+        "run-pyspark-batch-2": {
+          "cachingOptions": {
+            "enableCache": true
+          },
+          "componentRef": {
+            "name": "comp-run-pyspark-batch-2"
+          },
+          "dependentTasks": [
+            "run-pyspark-batch"
+          ],
+          "inputs": {
+            "parameters": {
+              "args": {
+                "runtimeValue": {
+                  "constant": [
+                    "--input",
+                    "{{$.inputs.parameters['pipelinechannel--preprocessed_output']}}",
+                    "--labels",
+                    "{{$.inputs.parameters['pipelinechannel--raw_labels']}}",
+                    "--output",
+                    "{{$.inputs.parameters['pipelinechannel--feature_output']}}",
+                    "--overwrite"
+                  ]
+                }
+              },
+              "batch_id": {
+                "runtimeValue": {
+                  "constant": "amex-build-features"
+                }
+              },
+              "pipelinechannel--feature_output": {
+                "componentInputParameter": "feature_output"
+              },
+              "pipelinechannel--preprocessed_output": {
+                "componentInputParameter": "preprocessed_output"
+              },
+              "pipelinechannel--raw_labels": {
+                "componentInputParameter": "raw_labels"
+              },
+              "project": {
+                "componentInputParameter": "project"
+              },
+              "py_file_uris": {
+                "runtimeValue": {
+                  "constant": [
+                    "gs://amex-credit-risk-ml-data/code/gcp/spark/amex_default.zip"
+                  ]
+                }
+              },
+              "region": {
+                "componentInputParameter": "region"
+              },
+              "runtime_properties": {
+                "runtimeValue": {
+                  "constant": {
+                    "spark.dataproc.driver.disk.size": "250g",
+                    "spark.dataproc.executor.disk.size": "250g",
+                    "spark.dataproc.scaling.version": "2",
+                    "spark.driver.cores": "4",
+                    "spark.driver.memory": "9600m",
+                    "spark.dynamicAllocation.executorAllocationRatio": "0.3",
+                    "spark.executor.cores": "4",
+                    "spark.executor.instances": "2",
+                    "spark.executor.memory": "9600m",
+                    "spark.sql.shuffle.partitions": "32"
+                  }
+                }
+              },
+              "script_uri": {
+                "runtimeValue": {
+                  "constant": "gs://amex-credit-risk-ml-data/code/gcp/spark/build_features.py"
+                }
+              }
+            }
+          },
+          "taskInfo": {
+            "name": "run-pyspark-batch-2"
           }
         },
         "run-vertex-training-job": {
@@ -433,6 +880,9 @@
           "componentRef": {
             "name": "comp-split-bigquery-feature-table"
           },
+          "dependentTasks": [
+            "load-parquet-to-bigquery"
+          ],
           "inputs": {
             "parameters": {
               "location": {
@@ -459,25 +909,28 @@
             "name": "split-bigquery-feature-table"
           }
         },
-        "upload-vertex-model": {
+        "sync-vertex-feature-store": {
           "cachingOptions": {
             "enableCache": true
           },
           "componentRef": {
-            "name": "comp-upload-vertex-model"
+            "name": "comp-sync-vertex-feature-store"
           },
           "dependentTasks": [
             "run-vertex-training-job"
           ],
           "inputs": {
             "parameters": {
-              "artifact_uri": {
-                "componentInputParameter": "model_artifacts"
-              },
-              "model_display_name": {
+              "entity_id_column": {
                 "runtimeValue": {
-                  "constant": "amex-lightgbm-credit-default"
+                  "constant": "customer_ID"
                 }
+              },
+              "feature_store_name": {
+                "componentInputParameter": "feature_store_name"
+              },
+              "feature_view_name": {
+                "componentInputParameter": "feature_view_name"
               },
               "project": {
                 "componentInputParameter": "project"
@@ -485,21 +938,41 @@
               "region": {
                 "componentInputParameter": "region"
               },
-              "serving_image": {
-                "componentInputParameter": "serving_image"
+              "source_table": {
+                "componentInputParameter": "batch_source_table"
               }
             }
           },
           "taskInfo": {
-            "name": "upload-vertex-model"
+            "name": "sync-vertex-feature-store"
           }
         }
       }
     },
     "inputDefinitions": {
       "parameters": {
+        "batch_prediction_table": {
+          "defaultValue": "amex-credit-risk-ml.amex_ml.customer_default_predictions",
+          "isOptional": true,
+          "parameterType": "STRING"
+        },
+        "batch_source_table": {
+          "defaultValue": "amex-credit-risk-ml.amex_ml.customer_features_current",
+          "isOptional": true,
+          "parameterType": "STRING"
+        },
         "bq_location": {
           "defaultValue": "US",
+          "isOptional": true,
+          "parameterType": "STRING"
+        },
+        "drift_metrics_table": {
+          "defaultValue": "amex-credit-risk-ml.amex_ml.drift_metrics",
+          "isOptional": true,
+          "parameterType": "STRING"
+        },
+        "drift_report_uri": {
+          "defaultValue": "gs://amex-credit-risk-ml-data/monitoring/train_vs_scoring_drift_report.csv",
           "isOptional": true,
           "parameterType": "STRING"
         },
@@ -508,8 +981,18 @@
           "isOptional": true,
           "parameterType": "STRING"
         },
+        "feature_store_name": {
+          "defaultValue": "amex_credit_default_feature_store",
+          "isOptional": true,
+          "parameterType": "STRING"
+        },
         "feature_table": {
           "defaultValue": "amex-credit-risk-ml.amex_ml.train_features",
+          "isOptional": true,
+          "parameterType": "STRING"
+        },
+        "feature_view_name": {
+          "defaultValue": "customer_features_current",
           "isOptional": true,
           "parameterType": "STRING"
         },
@@ -540,11 +1023,6 @@
         },
         "region": {
           "defaultValue": "us-central1",
-          "isOptional": true,
-          "parameterType": "STRING"
-        },
-        "serving_image": {
-          "defaultValue": "",
           "isOptional": true,
           "parameterType": "STRING"
         },

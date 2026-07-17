@@ -1,2 +1,6 @@
-apache-beam[gcp]==2.*
+functions-framework==3.*
 google-cloud-bigquery==3.*
+google-cloud-storage==2.*
+pandas
+numpy
+redis==5.*

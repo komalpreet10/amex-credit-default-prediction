@@ -24,6 +24,10 @@ CUSTOMER_FEATURES_TABLE_ID = os.getenv(
     "CUSTOMER_FEATURES_TABLE_ID",
     "customer_features_current",
 )
+BATCH_PREDICTIONS_TABLE_ID = os.getenv(
+    "BATCH_PREDICTIONS_TABLE_ID",
+    "customer_default_predictions",
+)
 STATEMENT_HISTORY_TABLE_ID = os.getenv(
     "STATEMENT_HISTORY_TABLE_ID",
     "raw_monthly_statements_amex",
@@ -40,6 +44,7 @@ ENDPOINT_MACHINE_TYPE = "n1-standard-2"
 ENDPOINT_MIN_REPLICA_COUNT = 1
 ENDPOINT_MAX_REPLICA_COUNT = 1
 ENDPOINT_TRAFFIC_PERCENTAGE = 100
+BATCH_PREDICTION_JOB_DISPLAY_NAME = "amex-lightgbm-batch-inference"
 
 # Vertex custom training defaults.
 TUNING_JOB_DISPLAY_NAME = "amex-lightgbm-optuna-tuning"
@@ -53,7 +58,8 @@ TUNING_N_SPLITS = 5
 TRAINING_SHAP_SAMPLE_SIZE = 3000
 TRAINING_SHAP_MAX_DISPLAY = 30
 
-# Online feature serving.
+# Optional online feature serving resources. The primary production path uses
+# batch inference from BigQuery features to a BigQuery predictions table.
 FEATURE_STORE_NAME = os.getenv(
     "FEATURE_STORE_NAME", "amex_credit_default_feature_store"
 )
@@ -70,6 +76,7 @@ FEATURE_TABLE = f"{PROJECT_ID}.{DATASET}.{FEATURE_TABLE_ID}"
 TRAIN_FEATURE_TABLE = f"{PROJECT_ID}.{DATASET}.{TRAIN_FEATURE_TABLE_ID}"
 TEST_FEATURE_TABLE = f"{PROJECT_ID}.{DATASET}.{TEST_FEATURE_TABLE_ID}"
 CUSTOMER_FEATURES_TABLE = f"{PROJECT_ID}.{DATASET}.{CUSTOMER_FEATURES_TABLE_ID}"
+BATCH_PREDICTIONS_TABLE = f"{PROJECT_ID}.{DATASET}.{BATCH_PREDICTIONS_TABLE_ID}"
 STATEMENT_HISTORY_TABLE = f"{PROJECT_ID}.{DATASET}.{STATEMENT_HISTORY_TABLE_ID}"
 CHANGED_CUSTOMERS_TABLE = f"{PROJECT_ID}.{DATASET}.{CHANGED_CUSTOMERS_TABLE_ID}"
 DRIFT_TABLE = f"{PROJECT_ID}.{DATASET}.{DRIFT_TABLE_ID}"
@@ -82,8 +89,15 @@ SELECTED_FEATURES_URI = f"{MODEL_ARTIFACTS}selected_feature_list.json"
 DRIFT_REPORT = f"gs://{BUCKET}/monitoring/train_vs_scoring_drift_report.csv"
 DEPLOYMENT_CONFIG_DIR = f"gs://{BUCKET}/config/"
 DEPLOYMENT_CONFIG_URI = f"{DEPLOYMENT_CONFIG_DIR}deployment_config.json"
-STREAMING_FEATURES_URI = f"{DEPLOYMENT_CONFIG_DIR}streaming_features.json"
 INFERENCE_FUNCTION_NAME = "amex-credit-default-score"
+
+# Monthly statement streaming ingest.
+STATEMENT_TOPIC = os.getenv("STATEMENT_TOPIC", "amex-monthly-statements")
+STATEMENT_DLQ_TOPIC = os.getenv("STATEMENT_DLQ_TOPIC", "amex-monthly-statements-dlq")
+STATEMENT_INGEST_FUNCTION_NAME = os.getenv(
+    "STATEMENT_INGEST_FUNCTION_NAME",
+    "amex-monthly-statement-ingest",
+)
 
 # Dataproc Serverless Spark jobs for full feature-engineering reruns.
 PREPROCESS_SCRIPT = f"gs://{BUCKET}/code/gcp/spark/preprocess.py"
@@ -103,25 +117,6 @@ DATAPROC_RUNTIME_PROPERTIES = {
     "spark.dataproc.executor.disk.size": "250g",
     "spark.sql.shuffle.partitions": "32",
 }
-
-# Pub/Sub and scheduler resources for online/automated workflows.
-STATEMENT_TOPIC = "statement-cycle-close"
-STATEMENT_SUBSCRIPTION = "statement-cycle-close-sub"
-STATEMENT_DLQ_TOPIC = "statement-cycle-close-dlq"
-STATEMENT_DLQ_MAX_DELIVERY_ATTEMPTS = 5
-STATEMENT_RETRY_MIN_BACKOFF_SECONDS = 10
-STATEMENT_RETRY_MAX_BACKOFF_SECONDS = 600
-STATEMENT_ACK_DEADLINE_SECONDS = 60
-STATEMENT_DLQ_ALERT_DISPLAY_NAME = "statement-cycle-close-dlq-message-alert"
-STATEMENT_DLQ_ALERT_THRESHOLD = 0
-STATEMENT_DLQ_ALERT_ALIGNMENT_SECONDS = 60
-PIPELINE_TRIGGER_TOPIC = "amex-pipeline-trigger"
-STATEMENT_SUBSCRIPTION_PATH = (
-    f"projects/{PROJECT_ID}/subscriptions/{STATEMENT_SUBSCRIPTION}"
-)
-MONTHLY_TRAINING_JOB = "amex-monthly-training"
-MONTHLY_TRAINING_SCHEDULE = "0 2 1 * *"
-MONTHLY_TRAINING_MESSAGE = '{"trigger":"monthly_training"}'
 
 # Vertex AI Model Monitoring defaults.
 MONITORING_DISPLAY_NAME = "amex-credit-default-monitoring"
