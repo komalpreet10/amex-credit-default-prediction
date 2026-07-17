@@ -68,7 +68,7 @@ def deploy_model(args: argparse.Namespace) -> aiplatform.Endpoint:
         min_replica_count=args.min_replica_count,
         max_replica_count=args.max_replica_count,
         traffic_percentage=ENDPOINT_TRAFFIC_PERCENTAGE,
-        sync=True
+        sync=True,
     )
     LOGGER.info("Deployment complete: %s", endpoint.resource_name)
     return endpoint
