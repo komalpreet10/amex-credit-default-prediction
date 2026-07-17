@@ -16,11 +16,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--project", default=PROJECT_ID)
     parser.add_argument("--location", default=REGION)
     parser.add_argument("--output-dir", default=DEPLOYMENT_CONFIG_DIR)
-    parser.add_argument(
-        "--vertex-endpoint-id", default=os.environ.get("VERTEX_ENDPOINT_ID")
-    )
     parser.add_argument("--skip-monitoring", action="store_true")
-    parser.add_argument("--skip-inference", action="store_true")
     return parser.parse_args()
 
 
@@ -37,10 +33,6 @@ def main() -> None:
     serving_image = os.environ.get("SERVING_IMAGE_URI")
     if not serving_image:
         raise RuntimeError("SERVING_IMAGE_URI environment variable is required.")
-    if not args.skip_inference and not args.vertex_endpoint_id:
-        raise RuntimeError(
-            "--vertex-endpoint-id or VERTEX_ENDPOINT_ID is required for inference deploy."
-        )
 
     steps = [
         (
@@ -58,50 +50,7 @@ def main() -> None:
                 serving_image,
             ],
         ),
-        (
-            "setup_pubsub",
-            [python, "deployment/setup_pubsub.py", "--project", args.project],
-        ),
-        (
-            "setup_scheduler",
-            [
-                python,
-                "deployment/setup_scheduler.py",
-                "--project",
-                args.project,
-                "--location",
-                args.location,
-            ],
-        ),
-        (
-            "setup_feature_store",
-            [
-                python,
-                "deployment/setup_feature_store.py",
-                "--project",
-                args.project,
-                "--location",
-                args.location,
-            ],
-        ),
     ]
-
-    if not args.skip_inference:
-        steps.append(
-            (
-                "deploy_inference_function",
-                [
-                    python,
-                    "deployment/deploy_inference_function.py",
-                    "--project",
-                    args.project,
-                    "--region",
-                    args.location,
-                    "--vertex-endpoint-id",
-                    args.vertex_endpoint_id,
-                ],
-            )
-        )
 
     if not args.skip_monitoring:
         steps.append(

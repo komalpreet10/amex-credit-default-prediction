@@ -15,6 +15,30 @@ gs://amex-credit-risk-ml-data/raw/train_data.csv
 gs://amex-credit-risk-ml-data/raw/train_labels.csv
 ```
 
+## Vertex container images
+
+Vertex custom training and model serving run from Artifact Registry container
+images. Build and push both images from the repository root:
+
+```bash
+ARTIFACT_REGISTRY_REPOSITORY=amex-credit-default IMAGE_TAG=latest ./deployment/build_images.sh
+```
+
+The script builds:
+
+```text
+docker/Dockerfile.train -> TRAINING_IMAGE_URI
+docker/Dockerfile.serve -> SERVING_IMAGE_URI
+```
+
+Export the printed image URIs before compiling/running the Vertex pipeline or
+deployment scripts:
+
+```bash
+export TRAINING_IMAGE_URI=us-central1-docker.pkg.dev/amex-credit-risk-ml/amex-credit-default/training:latest
+export SERVING_IMAGE_URI=us-central1-docker.pkg.dev/amex-credit-risk-ml/amex-credit-default/serving:latest
+```
+
 ## PySpark Jobs
 
 The Spark path mirrors the notebooks:
@@ -77,11 +101,11 @@ gcloud dataproc batches submit pyspark gcp/spark/build_features.py \
   --overwrite
 ```
 
-## Affected-customer feature refresh
+## Batch inference feature refresh
 
-For statement-cycle inference, do not recompute all customers and do not send raw
-statement columns through Pub/Sub. Append the new monthly statement rows to
-BigQuery, record the affected `customer_ID`s, then run a targeted Spark refresh.
+For monthly batch inference, do not recompute all customers. Append the new
+monthly statement rows to BigQuery, record the affected `customer_ID`s, then run
+a targeted Spark refresh.
 
 Input tables:
 
@@ -89,12 +113,13 @@ Input tables:
 raw statements:      amex-credit-risk-ml.amex_ml.raw_monthly_statements_amex
 changed customers:  amex-credit-risk-ml.amex_ml.changed_customers_statement_cycle
 serving features:   amex-credit-risk-ml.amex_ml.customer_features_current
+predictions:        amex-credit-risk-ml.amex_ml.customer_default_predictions
 ```
 
 The refresh job loads `selected_feature_list.json`, infers the raw columns needed
 for those selected engineered features, recomputes features only for affected
-customers, and merges the refreshed rows into the BigQuery table backing Vertex
-AI Feature Store.
+customers, and merges the refreshed rows into the BigQuery serving feature
+table used by batch inference.
 
 ```bash
 ./gcp/spark/package_src.sh
@@ -116,15 +141,34 @@ gcloud dataproc batches submit pyspark gcp/spark/refresh_selected_features.py \
 The Dataproc runtime must have the Spark BigQuery connector available. The
 driver also needs `google-cloud-bigquery` for the `MERGE`.
 
-Set up the Vertex AI Feature Store online path from the current serving feature
-table:
+After the serving feature table is refreshed, run the Vertex AI pipeline. The
+pipeline trains the LightGBM model, loads the selected feature list and model
+artifacts, scores `customer_features_current` in batch, and writes the latest
+default probabilities to `customer_default_predictions`.
 
 ```bash
-python deployment/setup_feature_store.py \
-  --project=amex-credit-risk-ml \
-  --location=us-central1 \
-  --source-table=amex-credit-risk-ml.amex_ml.customer_features_current
+python -m gcp.pipeline
 ```
+
+## Monthly statement streaming
+
+For event-driven monthly statement ingestion, deploy the Pub/Sub topic and Cloud
+Function:
+
+```bash
+python deployment/setup_streaming_pubsub.py
+python deployment/deploy_streaming_function.py
+```
+
+Publish each new statement as JSON to `amex-monthly-statements`. The function
+writes the raw statement to `raw_monthly_statements_amex`, writes the
+`customer_ID` and `statement_cycle` to `changed_customers_statement_cycle`, and
+updates Redis keys for the customer's rolling statement window and selected
+feature vector.
+
+Each customer has a Redis list trimmed to the latest 13 statements and a Redis
+feature-vector key computed from `selected_feature_list.json`. Online scoring
+reads Redis first for low-latency updates, with BigQuery as the durable fallback.
 
 ## Vertex training artifacts
 

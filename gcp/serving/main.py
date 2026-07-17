@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any
 
 import lightgbm as lgb
-import pandas as pd
 from fastapi import FastAPI, HTTPException
 from google.cloud import storage
 
@@ -66,11 +65,11 @@ def load_model() -> tuple[lgb.Booster, list[str]]:
 
 def align_instances(
     instances: list[dict[str, Any]], feature_list: list[str]
-) -> pd.DataFrame:
-    rows = []
-    for instance in instances:
-        rows.append({feature: instance.get(feature, 0.0) for feature in feature_list})
-    return pd.DataFrame(rows, columns=feature_list)
+) -> list[list[Any]]:
+    return [
+        [instance.get(feature, 0.0) for feature in feature_list]
+        for instance in instances
+    ]
 
 
 def risk_category(probability: float) -> str:
